@@ -14,22 +14,107 @@ Here is the updated **Complete Setup Guide**, fully integrated with our tool cap
 
 Before configuring the tools, it is vital to understand the separation of responsibilities between your models and VS Code extensions:
 
-```
-                      [ Apple Silicon M3 Pro Workstation ]
-                                       │
-         ┌─────────────────────────────┼─────────────────────────────┐
-         ▼                             ▼                             ▼
-  Port 11434 (Chat)            Port 11435 (FIM)            Port 11436 (Embeddings)
-  Qwen3.8-27B-GGUF             Qwen2.5-Coder-1.5B          nomic-embed-text-v1.5
-         │                             │                             │
-         ▼                             └──────────────┬──────────────┘
-  ┌──────────────┐                                    ▼
-  │  VS Code     │                             ┌──────────────┐
-  │  Cline       │                             │  VS Code     │
-  │  (Agentic)   │                             │  Twinny      │
-  └──────────────┘                             └──────────────┘
+The following Mermaid diagram shows the complete request path for the
+three-process `llama.cpp` setup.
 
+```mermaid
+flowchart LR
+    subgraph Clients["Developer devices"]
+        LocalVS["VS Code on server Mac"]
+        RemoteVS["VS Code on remote device"]
+        Cline["Cline<br/>agent and chat on :11434"]
+        Twinny["Twinny<br/>chat :11434, FIM :11435, RAG :11436"]
+
+        LocalVS --> Cline
+        LocalVS --> Twinny
+        RemoteVS --> Cline
+        RemoteVS --> Twinny
+    end
+
+    subgraph Tailnet["Private Tailscale network"]
+        TS["Encrypted tailnet connection<br/>server Tailscale IPv4 address"]
+    end
+
+    Cline -->|"HTTP API request"| TS
+    Twinny -->|"HTTP API request"| TS
+
+    subgraph Mac["Apple Silicon M3 Pro server"]
+        Scripts["Secure launcher scripts<br/>dependency checks + port validation"]
+
+        subgraph LlamaPath["llama.cpp — three server processes"]
+            LChat["llama-server :11434<br/>OpenAI-compatible chat API"]
+            LFIM["llama-server :11435<br/>native completion API"]
+            LEmbed["llama-server :11436<br/>embedding API"]
+
+            ChatGGUF["Qwen3.8-27B GGUF<br/>chat and reasoning"]
+            FIMGGUF["Qwen2.5-Coder-1.5B GGUF<br/>inline completion"]
+            EmbedGGUF["nomic-embed-text-v1.5 GGUF<br/>workspace vectors"]
+
+            LChat --> ChatGGUF
+            LFIM --> FIMGGUF
+            LEmbed --> EmbedGGUF
+        end
+
+        Scripts -.->|"start_llama_network.sh"| LChat
+        Scripts -.->|"start_llama_network.sh"| LFIM
+        Scripts -.->|"start_llama_network.sh"| LEmbed
+    end
+
+    TS -->|"default: bind only to Tailscale IP"| LChat
+    TS -->|"default: bind only to Tailscale IP"| LFIM
+    TS -->|"default: bind only to Tailscale IP"| LEmbed
+    classDef client fill:#e8f1ff,stroke:#2563eb,color:#111827
+    classDef network fill:#ecfdf5,stroke:#059669,color:#111827
+    classDef service fill:#fff7ed,stroke:#ea580c,color:#111827
+    classDef model fill:#f5f3ff,stroke:#7c3aed,color:#111827
+    class LocalVS,RemoteVS,Cline,Twinny client
+    class TS network
+    class Scripts,LChat,LFIM,LEmbed service
+    class ChatGGUF,FIMGGUF,EmbedGGUF model
 ```
+
+### Simple two-computer connection
+
+This simplified view shows how a second computer reaches the model server. Both
+computers must be signed in to the same Tailscale network. Use the server Mac's
+Tailscale IP address in the client applications; do not use its Wi-Fi address.
+
+```mermaid
+flowchart LR
+    Client["Computer 1 — Client<br/>VS Code + Cline/Twinny"]
+    Tailnet["Tailscale<br/>encrypted private network"]
+    Server["Computer 2 — Server Mac<br/>three llama-server processes"]
+    Models["Local GGUF models<br/>chat :11434 · FIM :11435 · embeddings :11436"]
+
+    Client -->|"Request to http://TAILSCALE-IP:PORT"| Tailnet
+    Tailnet -->|"Encrypted connection"| Server
+    Server -->|"Runs inference"| Models
+    Models -->|"Response"| Server
+    Server -->|"Encrypted response"| Tailnet
+    Tailnet -->|"Result"| Client
+
+    classDef computer fill:#e8f1ff,stroke:#2563eb,color:#111827
+    classDef network fill:#ecfdf5,stroke:#059669,color:#111827
+    classDef model fill:#f5f3ff,stroke:#7c3aed,color:#111827
+    class Client,Server computer
+    class Tailnet network
+    class Models model
+```
+
+For example, if Computer 2 has Tailscale address `TAILSCALE_IP`, Computer 1
+connects to `http://TAILSCALE_IP:11434`. With the llama.cpp setup, ports
+`11435` and `11436` provide autocomplete and embeddings respectively.
+
+### Connection and security rules
+
+- The default `--bind tailscale` mode listens only on the server's Tailscale
+  IPv4 address. Both local and remote clients should use that address.
+- `--bind localhost` is for clients running exclusively on the server Mac.
+- `--bind lan` listens on every interface and exposes an unauthenticated API.
+  Use it only on a trusted network and never expose these ports to the public
+  internet.
+- In this llama.cpp layout, port `11434` handles chat, `11435` handles FIM
+  autocomplete, and `11436` handles embeddings.
 
 * **Cline (Port 11434):** Your **Agentic Task Engine**. Handles file creation, multi-file refactoring, terminal execution, and tool calls using the 27B model.
 * **Twinny (Ports 11435 & 11436):** Your **Silent Editor Helper**. Twinny **does not support autonomous tool execution** (it cannot run terminal commands or auto-edit files on disk). Instead, it provides ultra-fast inline ghost-text code completion (FIM) and vectorizes your workspace into RAG embeddings.
@@ -175,25 +260,131 @@ Open three terminal tabs to keep all services running simultaneously:
 * **Tab 3:** Run `./start_llama_network.sh`, choose `3` $\rightarrow$ **Workspace Embeddings** (`11436`)
 
 
-4. **4. Setup Cline (VS Code):** Agent Execution & Tools.
-1. Install **Cline** from VS Code Extensions.
-2. Open Cline settings (gear icon) and set:
-* **API Provider:** `OpenAI Compatible`
-* **Base URL:** `http://localhost:11434/v1`
-* **Model ID:** `Qwen3.8-27B`
-* **API Key:** `not-needed`
+4. **Setup Cline (VS Code): Agent Execution & Tools.**
 
+Install **Cline** from VS Code Extensions, open **Settings → API Configuration**, and use the following values:
 
+| Setting | Local Mac | Remote device over Tailscale |
+| --- | --- | --- |
+| API Provider | `Llama` | `Llama` |
+| Base URL | `http://localhost:11434` | `http://TAILSCALE_IP:11434` |
+| OpenAI Compatible API Key | Leave empty | Leave empty |
+| Model ID | `Qwen3.8-27B` | `Qwen3.8-27B` |
+| Reasoning Effort | `None` | `None` |
 
+The screenshot shows the remote Tailscale configuration. When the **Llama** provider is selected, enter the server origin only; do not append `/v1`. Cline adds the required API route.
 
-5. **5. Setup Twinny (VS Code):** Ghost Text & Codebase RAG.
-1. Install **Twinny** (`ext install rjmacarthy.twinny`).
-2. Click the **Twinny Plug Icon** and set up the providers:
-* **FIM / Completion:** Hostname: `http://localhost`, Port: `11435`, Path: `/v1/completions`, Model: `Qwen2.5-Coder-1.5B`, Template: `qwen`.
-* **Embeddings:** Hostname: `http://localhost`, Port: `11436`, Path: `/v1/embeddings`, Model: `nomic-embed-text`.
+5. **Setup Twinny (VS Code): Chat, Ghost Text & Codebase RAG.**
 
+Install **Twinny** (`ext install rjmacarthy.twinny`). Open the Twinny provider settings and create the following three providers. Use `localhost` when VS Code runs on the server Mac, or `TAILSCALE_IP` when connecting from another device on the same Tailscale network. Enter only the hostname in the **Hostname** field—do not include `http://`.
 
-3. Click **Embed Workspace** in Twinny to vector index your project.
+### Twinny chat provider
+
+| Setting | Value |
+| --- | --- |
+| Label | `llama.cpp` |
+| Type | `Chat` |
+| Provider | `llama.cpp` |
+| Protocol | `http` |
+| Hostname | `localhost` or `TAILSCALE_IP` |
+| Port | `11434` |
+| API Path | `/v1` |
+| API Key | Leave empty |
+| Model Name | `Qwen3.8-27B` |
+
+Twinny appends `/chat/completions` to the base API path. The resulting remote endpoint is `http://TAILSCALE_IP:11434/v1/chat/completions`.
+
+### Twinny autocomplete provider
+
+| Setting | Value |
+| --- | --- |
+| Label | `llama.cpp FIM` |
+| Type | `Autocomplete` |
+| Provider | `llama.cpp` |
+| Protocol | `http` |
+| Hostname | `localhost` or `TAILSCALE_IP` |
+| Port | `11435` |
+| API Path | `/completion` |
+| API Key | Leave empty |
+| Model Name | `Qwen2.5-Coder-1.5B` |
+| FIM Template | `automatic` |
+| Repository level | Off |
+
+The tested remote endpoint is `http://TAILSCALE_IP:11435/completion`. This is the native llama.cpp completion route, not `/v1/completions`.
+
+### Twinny embeddings provider
+
+| Setting | Value |
+| --- | --- |
+| Label | `llama.cpp EMBEDDING` |
+| Type | `Embeddings` |
+| Provider | `llama.cpp` |
+| Protocol | `http` |
+| Hostname | `localhost` or `TAILSCALE_IP` |
+| Port | `11436` |
+| API Path | `/v1/embeddings` |
+| API Key | Leave empty |
+| Model Name | `nomic-embed-text` |
+
+The provider test shown in the screenshot returned a 768-dimensional embedding. After the provider test succeeds, click **Embed Workspace** in Twinny to build the project index.
+
+For every provider, click **Test Provider** before saving. The captured remote tests succeeded for chat, autocomplete, and embeddings.
+
+## Alternative: Ollama on One Shared Port
+
+Ollama can provide the same three workloads through one daemon on port `11434`. Unlike the llama.cpp layout above, the client selects a model with each request, so separate ports and terminal tabs are not required.
+
+The launcher uses these defaults:
+
+| Workload | Ollama model | Native endpoint |
+| --- | --- | --- |
+| Chat and agentic tasks | `qwen3.8:27b` | `/api/chat` |
+| FIM autocomplete | `qwen2.5-coder:1.5b` | `/api/generate` |
+| Workspace embeddings | `nomic-embed-text:v1.5` | `/api/embeddings` |
+
+Install the dependencies and start the server:
+
+```bash
+brew install ollama tailscale lsof
+sudo tailscale up
+./start_ollama_network.sh
+```
+
+The script starts Ollama with flash attention, a Q8 KV cache, a 16K default context, and two parallel request slots. It checks the local model inventory and automatically pulls only missing models. The initial download requires roughly 20 GB plus temporary transfer space. Ollama loads and evicts models as requests arrive instead of keeping all three resident in memory.
+
+To substitute a model without editing the script, set one or more overrides before launching:
+
+```bash
+OLLAMA_CHAT_MODEL="qwen3.8:27b" \
+OLLAMA_AUTOCOMPLETE_MODEL="qwen2.5-coder:1.5b" \
+OLLAMA_EMBEDDING_MODEL="nomic-embed-text:v1.5" \
+./start_ollama_network.sh
+```
+
+### Cline with Ollama
+
+In **Cline → Settings → API Configuration**, configure:
+
+| Setting | Local Mac | Remote device over Tailscale |
+| --- | --- | --- |
+| API Provider | `Ollama` | `Ollama` |
+| Base URL | `http://localhost:11434` | `http://TAILSCALE_IP:11434` |
+| API Key | Leave empty | Leave empty |
+| Model ID | `qwen3.8:27b` | `qwen3.8:27b` |
+
+If a client does not offer a native Ollama provider, select its OpenAI-compatible provider and use `http://localhost:11434/v1` or `http://TAILSCALE_IP:11434/v1` as the base URL.
+
+### Twinny with Ollama
+
+Create all three providers with **Provider** set to `Ollama`, **Protocol** set to `http`, and **Port** set to `11434`. Use `localhost` on the server Mac or `TAILSCALE_IP` from a device on the same tailnet.
+
+| Type | Model Name | API Path | FIM Template |
+| --- | --- | --- | --- |
+| Chat | `qwen3.8:27b` | `/api/chat` | Not applicable |
+| Autocomplete | `qwen2.5-coder:1.5b` | `/api/generate` | `automatic` |
+| Embeddings | `nomic-embed-text:v1.5` | `/api/embeddings` | Not applicable |
+
+Leave the API key empty. Test each provider before saving, then run **Embed Workspace** after the embedding provider succeeds.
 
 
 ---
@@ -206,3 +397,18 @@ Open three terminal tabs to keep all services running simultaneously:
 | **`-ctk q8_0 -ctv q8_0`** | 8-bit KV Cache Compression | Halves context RAM usage (~2.5GB vs ~5GB at 16k context). |
 | **`-ngl 99`** | Complete GPU Offloading | Pins 100% of layers directly to Apple Unified Memory. |
 | **`--embedding --pooling mean`** | Pooling Kernel Activation | Transforms `llama-server` into a vector generation endpoint. |
+
+
+
+
+## Verified Network Addresses
+
+The screenshots and terminal output show the following addresses for the current server:
+
+| Network | Host |
+| --- | --- |
+| Tailscale | `TAILSCALE_IP` |
+| Local Wi-Fi | `LAN_IP` |
+| Same machine | `localhost` |
+
+Use the Tailscale address only from devices authenticated to the same tailnet. These addresses can change; use the URLs printed by `start_llama_network.sh` if they differ from the values above.
