@@ -1,0 +1,27 @@
+name: Mac-llama-Server
+version: 0.0.1
+schema: v1
+
+models:
+  - name: Qwen 3.8 27B (Chat & Editing)
+    provider: openai
+    model: Qwen3.8-27B
+    apiBase: http://TAILSCALE_IP:11434/v1
+    roles:
+      - chat
+      - edit
+      - apply
+    requestOptions:
+      timeout: 300000
+
+  - name: Qwen 2.5 Coder 1.5B (Instant Autocomplete)
+    provider: openai
+    model: Qwen2.5-Coder-1.5B
+    apiBase: http://TAILSCALE_IP:11435/v1
+    roles:
+      - autocomplete
+
+autocompleteOptions:
+  debounceDelay: 150
+  maxPromptTokens: 1024
+  useCopyBuffer: true
