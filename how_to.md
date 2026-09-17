@@ -24,10 +24,11 @@ Build the locally signed application:
 ```
 
 The result is `dist/Local AI Controller.app`. The application uses the bundled
-launcher scripts in offline/no-pull mode, stores logs and process records under
+launcher scripts, stores logs and process records under
 `~/Library/Application Support/Local AI Controller/`, and preserves services
-when requested at quit. The llama.cpp chat port defaults to `11437` and can be
-changed in the app's Settings window.
+when requested at quit. Configure each service's port, bind mode, download
+policy, model identifiers, and advanced runtime settings directly on its
+service screen.
 
 The Recommendations screen checks the official Ollama library and recent
 Hugging Face GGUF listings at most once per day. Only entries with complete,
@@ -155,7 +156,7 @@ Open your macOS Terminal and run:
 ```bash
 # Update Homebrew and install core tools
 brew update
-brew install llama.cpp tailscale lsof
+brew install llama.cpp tailscale
 
 ```
 
@@ -177,7 +178,7 @@ cat << 'EOF' > start_llama_network.sh
 # Strict execution modes for error catching
 set -euo pipefail
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 echo "=== Llama-Server Multi-Model Infrastructure Manager ==="
 
@@ -370,10 +371,13 @@ The launcher uses these defaults:
 Install the dependencies and start the server:
 
 ```bash
-brew install ollama tailscale lsof
+brew install ollama tailscale
 sudo tailscale up
 ./start_ollama_network.sh
 ```
+
+Both launchers use the `lsof` utility provided by macOS at `/usr/sbin/lsof`, so
+no separate Homebrew installation is needed for port checks.
 
 The script starts Ollama with flash attention, a Q8 KV cache, a 16K default context, and two parallel request slots. It checks the local model inventory and automatically pulls only missing models. The initial download requires roughly 20 GB plus temporary transfer space. Ollama loads and evicts models as requests arrive instead of keeping all three resident in memory.
 

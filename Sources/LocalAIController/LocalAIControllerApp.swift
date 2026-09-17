@@ -71,7 +71,7 @@ struct MainView: View {
             }
         }
         .toolbar {
-            Button("Start All") { promptToStartAll(manager) }
+            Button("Start All") { attemptStartAll(manager) }
             Button("Stop All") { Task { await manager.stopAll() } }
             Button { Task { await manager.refreshStatuses() } } label: { Image(systemName: "arrow.clockwise") }
         }
@@ -102,6 +102,7 @@ struct ServiceDetail: View {
     @ObservedObject var manager: ServiceManager
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 VStack(alignment: .leading) {
@@ -113,9 +114,10 @@ struct ServiceDetail: View {
             }
             Text(service.statusText).foregroundStyle(service.state == .failed ? .red : .secondary)
             if let endpoint = service.endpoint { Text(endpoint).font(.system(.body, design: .monospaced)).textSelection(.enabled) }
+            ServiceConfigurationEditor(serviceID: service.id, manager: manager)
             HStack {
-                Button("Start") { promptToStart(service.id, manager: manager) }
-                    .disabled(!service.definition.supported || [.running, .starting, .external].contains(service.state))
+                Button("Start") { attemptStart(service.id, manager: manager) }
+                    .disabled(!service.definition.supported || [.running, .starting, .external].contains(service.state) || !manager.validationIssues(for: service.id).isEmpty)
                 Button("Stop") { Task { await manager.stop(service.id) } }
                     .disabled(![.running, .starting].contains(service.state) || service.pid == nil)
                 Spacer()
@@ -124,8 +126,82 @@ struct ServiceDetail: View {
                 Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([manager.logURL(service.id)]) }
             }
             TextEditor(text: .constant(service.logText.isEmpty ? "No log output." : service.logText))
-                .font(.system(.caption, design: .monospaced)).border(.separator).disabled(true)
+                .font(.system(.caption, design: .monospaced)).border(.separator).disabled(true).frame(minHeight: 180)
         }.padding()
+        }
+    }
+}
+
+struct ServiceConfigurationEditor: View {
+    let serviceID: ServiceID
+    @ObservedObject var manager: ServiceManager
+    @State private var advanced = false
+
+    private var configuration: ServiceLaunchConfiguration { manager.configuration(for: serviceID) }
+    private var locked: Bool { manager.isConfigurationLocked(serviceID) }
+
+    var body: some View {
+        GroupBox("Launch configuration") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    TextField("Port", value: commonBinding(\.port), format: .number).frame(maxWidth: 180)
+                    Picker("Bind", selection: commonBinding(\.bindMode)) { ForEach(BindMode.allCases) { Text($0.title).tag($0) } }.frame(maxWidth: 260)
+                    Picker("Download", selection: commonBinding(\.downloadPolicy)) { ForEach(DownloadPolicy.allCases) { Text($0.title).tag($0) } }.frame(maxWidth: 260)
+                }
+                if configuration.llama != nil { llamaFields } else if configuration.ollama != nil { ollamaFields }
+                DisclosureGroup("Advanced", isExpanded: $advanced) {
+                    if configuration.llama != nil { llamaAdvanced } else if configuration.ollama != nil { ollamaAdvanced }
+                }
+                let issues = manager.validationIssues(for: serviceID)
+                ForEach(issues) { Text($0.message).font(.caption).foregroundStyle(.red) }
+                HStack {
+                    if locked { Label("Stop the service to edit its launch configuration.", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary) }
+                    Spacer()
+                    Button("Reset to Defaults") { manager.resetConfiguration(serviceID) }.disabled(locked || configuration == .defaultValue(for: serviceID))
+                }
+            }.padding(8).disabled(locked)
+        }
+    }
+
+    private var llamaFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Hugging Face repository", text: llamaBinding(\.repository))
+            TextField("GGUF filename", text: llamaBinding(\.filename))
+            TextField("Model alias", text: llamaBinding(\.alias))
+        }
+    }
+    private var llamaAdvanced: some View {
+        HStack {
+            TextField("Context size", value: llamaBinding(\.contextSize), format: .number)
+            TextField("GPU layers", value: llamaBinding(\.gpuLayers), format: .number)
+        }.padding(.top, 8)
+    }
+    private var ollamaFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Chat model", text: ollamaBinding(\.chatModel))
+            TextField("Autocomplete model", text: ollamaBinding(\.autocompleteModel))
+            TextField("Embedding model", text: ollamaBinding(\.embeddingModel))
+        }
+    }
+    private var ollamaAdvanced: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle("Flash attention", isOn: ollamaBinding(\.flashAttention))
+            TextField("KV cache type", text: ollamaBinding(\.kvCacheType))
+            HStack {
+                TextField("Context length", value: ollamaBinding(\.contextLength), format: .number)
+                TextField("Parallel requests", value: ollamaBinding(\.parallelRequests), format: .number)
+                TextField("Max loaded models", value: ollamaBinding(\.maxLoadedModels), format: .number)
+            }
+        }.padding(.top, 8)
+    }
+    private func commonBinding<Value>(_ keyPath: WritableKeyPath<ServiceLaunchConfiguration, Value>) -> Binding<Value> {
+        Binding(get: { configuration[keyPath: keyPath] }, set: { value in var copy = configuration; copy[keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
+    }
+    private func llamaBinding<Value>(_ keyPath: WritableKeyPath<LlamaLaunchConfiguration, Value>) -> Binding<Value> {
+        Binding(get: { configuration.llama![keyPath: keyPath] }, set: { value in var copy = configuration; copy.llama![keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
+    }
+    private func ollamaBinding<Value>(_ keyPath: WritableKeyPath<OllamaLaunchConfiguration, Value>) -> Binding<Value> {
+        Binding(get: { configuration.ollama![keyPath: keyPath] }, set: { value in var copy = configuration; copy.ollama![keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
     }
 }
 
@@ -169,7 +245,7 @@ struct MenuView: View {
             Button("\(service.state == .running ? "●" : "○") \(service.definition.name)") { openWindow(id: "main") }
         }
         Divider()
-        Button("Start All") { promptToStartAll(manager) }
+        Button("Start All") { attemptStartAll(manager) }
         Button("Stop All") { Task { await manager.stopAll() } }
         Button("Open Controller") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Divider()
@@ -178,30 +254,33 @@ struct MenuView: View {
 }
 
 @MainActor
-private func downloadChoice(title: String) -> Bool? {
+private func confirmWarnings(_ warnings: [LaunchWarning]) -> Bool {
+    guard !warnings.isEmpty else { return true }
     let alert = NSAlert()
-    alert.messageText = title
-    alert.informativeText = "Cached Only will never download. Allow Downloads may fetch any configured model that is missing; model downloads can be large."
-    alert.addButton(withTitle: "Cached Only")
-    alert.addButton(withTitle: "Allow Downloads")
-    alert.addButton(withTitle: "Cancel")
-    switch alert.runModal() {
-    case .alertFirstButtonReturn: return false
-    case .alertSecondButtonReturn: return true
-    default: return nil
-    }
+    alert.alertStyle = .warning; alert.messageText = "Review launch warnings"
+    alert.informativeText = warnings.map { "• \($0.message)" }.joined(separator: "\n")
+    alert.addButton(withTitle: "Acknowledge and Start"); alert.addButton(withTitle: "Cancel")
+    return alert.runModal() == .alertFirstButtonReturn
 }
 
 @MainActor
-private func promptToStart(_ id: ServiceID, manager: ServiceManager) {
-    guard let allowDownloads = downloadChoice(title: "Start this model service?") else { return }
-    Task { await manager.start(id, allowDownloads: allowDownloads) }
+private func showConfigurationErrors(_ issues: [ConfigurationIssue]) {
+    let alert = NSAlert(); alert.alertStyle = .critical; alert.messageText = "Invalid launch configuration"
+    alert.informativeText = issues.map { "• \($0.message)" }.joined(separator: "\n"); alert.runModal()
 }
 
 @MainActor
-private func promptToStartAll(_ manager: ServiceManager) {
-    guard let allowDownloads = downloadChoice(title: "Start all model services?") else { return }
-    Task { await manager.startAll(allowDownloads: allowDownloads) }
+private func attemptStart(_ id: ServiceID, manager: ServiceManager) {
+    let issues = manager.validationIssues(for: id); guard issues.isEmpty else { showConfigurationErrors(issues); return }
+    let warnings = manager.launchWarnings(for: [id]); guard confirmWarnings(warnings) else { return }
+    Task { await manager.start(id, warningsAcknowledged: !warnings.isEmpty) }
+}
+
+@MainActor
+private func attemptStartAll(_ manager: ServiceManager) {
+    let issues = manager.validationIssuesForStartAll(); guard issues.isEmpty else { showConfigurationErrors(issues); return }
+    let warnings = manager.launchWarnings(for: [.ollama, .llamaChat, .autocomplete, .embeddings]); guard confirmWarnings(warnings) else { return }
+    Task { await manager.startAll(warningsAcknowledged: !warnings.isEmpty) }
 }
 
 struct SettingsView: View {
@@ -209,10 +288,9 @@ struct SettingsView: View {
     @State private var loginError = ""
     var body: some View {
         Form {
-            TextField("llama.cpp chat port", value: $manager.chatPort, format: .number)
             Toggle("Launch at Login", isOn: Binding(get: { manager.launchAtLogin }, set: updateLogin))
             if !loginError.isEmpty { Text(loginError).foregroundStyle(.red).font(.caption) }
-            Text("Ports 1024–65535 are allowed. Changes apply on the next launch.").font(.caption).foregroundStyle(.secondary)
+            Text("Configure ports, models, and networking on each service screen.").font(.caption).foregroundStyle(.secondary)
         }.padding().frame(width: 420)
             .onAppear { manager.launchAtLogin = SMAppService.mainApp.status == .enabled }
     }

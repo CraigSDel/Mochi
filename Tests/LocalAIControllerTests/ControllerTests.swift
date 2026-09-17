@@ -46,6 +46,7 @@ private final class FakeProbe: SystemProbing {
     var occupiedPorts: Set<Int> = []
     var portListeningCheck: ((Int) -> Bool)?
     var tailnetIP: String? = "100.64.0.1"
+    var lanIP: String? = "192.168.1.10"
     var diskBytes: Int64 = 100_000_000_000
     var script: URL?
     var processRunning = false
@@ -53,15 +54,17 @@ private final class FakeProbe: SystemProbing {
     var processCommandValue = "bash start_llama_network.sh"
     var healthy = false
     var lastHealthPort: Int?
+    var lastHealthHost: String?
     init(directory: URL) { supportDirectory = directory }
     func commandPath(_ command: String) -> String? { commands[command] }
     func isPortListening(_ port: Int) -> Bool { portListeningCheck?(port) ?? occupiedPorts.contains(port) }
     func tailscaleIP() -> String? { tailnetIP }
+    func localNetworkIP() -> String? { lanIP }
     func availableDiskBytes() -> Int64 { diskBytes }
     func scriptURL(named name: String) -> URL? { script }
     func isProcessRunning(_ pid: Int32) -> Bool { processRunningCheck?(pid) ?? processRunning }
     func processCommand(_ pid: Int32) -> String { processCommandValue }
-    func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool { lastHealthPort = port; return healthy }
+    func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool { lastHealthPort = port; lastHealthHost = host; return healthy }
 }
 
 @MainActor
@@ -143,9 +146,59 @@ final class StartupDiagnosticsTests: XCTestCase {
 
     func testDownloadModesProduceAuditableArguments() {
         let script = URL(fileURLWithPath: "/tmp/start.sh")
-        XCTAssertTrue(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", allowDownloads: false).contains("--offline"))
-        XCTAssertFalse(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", allowDownloads: true).contains("--offline"))
-        XCTAssertTrue(ServiceManager.launchArguments(id: .ollama, script: script, modelChoice: nil, allowDownloads: false).contains("--no-pull"))
+        let cached = ServiceLaunchConfiguration.defaultValue(for: .llamaChat)
+        var downloads = cached; downloads.downloadPolicy = .allowDownloads
+        XCTAssertTrue(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: cached).contains("--offline"))
+        XCTAssertFalse(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: downloads).contains("--offline"))
+        XCTAssertTrue(ServiceManager.launchArguments(id: .ollama, script: script, modelChoice: nil, configuration: .defaultValue(for: .ollama)).contains("--no-pull"))
+        var ollama = ServiceLaunchConfiguration.defaultValue(for: .ollama); ollama.port = 12001; ollama.bindMode = .localhost
+        let arguments = ServiceManager.launchArguments(id: .ollama, script: script, modelChoice: nil, configuration: ollama)
+        XCTAssertTrue(arguments.contains("12001")); XCTAssertTrue(arguments.contains("localhost"))
+    }
+
+    func testLaunchEnvironmentIncludesSystemAdministrationPaths() {
+        let environment = ServiceManager.launchEnvironment(id: .llamaChat, configuration: .defaultValue(for: .llamaChat), base: ["PATH": "/usr/bin:/bin", "PRESERVED": "yes"])
+        let paths = environment["PATH"]?.split(separator: ":").map(String.init) ?? []
+        XCTAssertTrue(paths.contains("/usr/sbin"))
+        XCTAssertTrue(paths.contains("/sbin"))
+        XCTAssertEqual(environment["PRESERVED"], "yes")
+        XCTAssertEqual(environment["LLAMA_CHAT_REPO"], "unsloth/Qwen3.8-27B-GGUF")
+        XCTAssertEqual(environment["LLAMA_CHAT_PORT"], "11437")
+        let ollama = ServiceManager.launchEnvironment(id: .ollama, configuration: .defaultValue(for: .ollama), base: [:])
+        XCTAssertEqual(ollama["OLLAMA_CHAT_MODEL"], "qwen3.8:27b")
+        XCTAssertEqual(ollama["OLLAMA_NUM_PARALLEL"], "2")
+    }
+
+    func testLaunchEnvironmentContainsEveryConfiguredRuntimeValue() {
+        var llama = ServiceLaunchConfiguration.defaultValue(for: .autocomplete)
+        llama.port = 12002; llama.llama = .init(repository: "owner/repo", filename: "model.gguf", alias: "custom", contextSize: 4096, gpuLayers: 42)
+        let llamaEnvironment = ServiceManager.launchEnvironment(id: .autocomplete, configuration: llama, base: [:])
+        XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_PORT"], "12002")
+        XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_REPO"], "owner/repo")
+        XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_FILE"], "model.gguf")
+        XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_ALIAS"], "custom")
+        XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_CONTEXT"], "4096")
+        XCTAssertEqual(llamaEnvironment["LLAMA_GPU_LAYERS"], "42")
+
+        var ollama = ServiceLaunchConfiguration.defaultValue(for: .ollama)
+        ollama.port = 12003; ollama.ollama = .init(chatModel: "chat:x", autocompleteModel: "code:x", embeddingModel: "embed:x", flashAttention: false, kvCacheType: "f16", contextLength: 2048, parallelRequests: 3, maxLoadedModels: 2)
+        let ollamaEnvironment = ServiceManager.launchEnvironment(id: .ollama, configuration: ollama, base: [:])
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_PORT"], "12003")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_CHAT_MODEL"], "chat:x")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_AUTOCOMPLETE_MODEL"], "code:x")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_EMBEDDING_MODEL"], "embed:x")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_FLASH_ATTENTION"], "0")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_KV_CACHE_TYPE"], "f16")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_CONTEXT_LENGTH"], "2048")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_NUM_PARALLEL"], "3")
+        XCTAssertEqual(ollamaEnvironment["OLLAMA_MAX_LOADED_MODELS"], "2")
+    }
+
+    func testLegacyManagedProcessRecordDecodesWithDefaultableBindMode() throws {
+        let json = #"[{"serviceID":"llamaChat","pid":123,"port":11437,"expectedCommand":"start_llama_network.sh","startedAt":0,"logPath":"/tmp/test.log"}]"#
+        let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .secondsSince1970
+        let records = try decoder.decode([ManagedProcessRecord].self, from: Data(json.utf8))
+        XCTAssertNil(records.first?.bindMode)
     }
 
     func testSuccessfulRetryClearsFailureAndRetainsHistory() async throws {
@@ -198,7 +251,9 @@ final class StartupDiagnosticsTests: XCTestCase {
         probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
         let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
         await manager.start(.llamaChat)
-        manager.chatPort = 12000
+        var edited = manager.configuration(for: .llamaChat); edited.port = 12000
+        manager.updateConfiguration(edited, for: .llamaChat)
+        XCTAssertEqual(manager.configuration(for: .llamaChat).port, 11437)
         probe.lastHealthPort = nil
         await manager.refreshStatuses()
         XCTAssertEqual(probe.lastHealthPort, 11437)
@@ -258,6 +313,81 @@ final class StartupDiagnosticsTests: XCTestCase {
         let service = manager.services.first { $0.id == .autocomplete }
         XCTAssertEqual(service?.state, .external)
         XCTAssertEqual(service?.endpoint, "http://100.64.0.1:11435/v1")
+    }
+
+    func testProfilesMigratePersistAndReset() {
+        let (directory, probe, defaults) = context(); defaults.set(12345, forKey: "llamaChatPort")
+        let first = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        XCTAssertEqual(first.configuration(for: .llamaChat).port, 12345)
+        XCTAssertEqual(first.configuration(for: .ollama), .defaultValue(for: .ollama))
+        var edited = first.configuration(for: .autocomplete); edited.port = 13000; edited.bindMode = .localhost
+        first.updateConfiguration(edited, for: .autocomplete)
+        let secondProbe = FakeProbe(directory: directory)
+        let second = ServiceManager(probe: secondProbe, defaults: defaults, startTimer: false)
+        XCTAssertEqual(second.configuration(for: .autocomplete), edited)
+        second.resetConfiguration(.autocomplete)
+        XCTAssertEqual(second.configuration(for: .autocomplete), .defaultValue(for: .autocomplete))
+    }
+
+    func testValidationAndStartAllPortCollision() {
+        let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        var chat = manager.configuration(for: .llamaChat); chat.port = 80; chat.llama?.repository = ""
+        manager.updateConfiguration(chat, for: .llamaChat)
+        XCTAssertTrue(manager.validationIssues(for: .llamaChat).contains { $0.field == "port" })
+        XCTAssertTrue(manager.validationIssues(for: .llamaChat).contains { $0.field == "repository" })
+        chat = .defaultValue(for: .llamaChat); chat.port = 11435; manager.updateConfiguration(chat, for: .llamaChat)
+        XCTAssertTrue(manager.validationIssuesForStartAll().contains { $0.field == "ports" })
+    }
+
+    func testLanAndCustomModelsProduceConsolidatableWarnings() {
+        let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        var config = manager.configuration(for: .llamaChat); config.bindMode = .lan; config.llama?.repository = "custom/repo"
+        manager.updateConfiguration(config, for: .llamaChat)
+        let warnings = manager.launchWarnings(for: [.llamaChat])
+        XCTAssertEqual(warnings.count, 2)
+        XCTAssertTrue(warnings.contains { $0.message.contains("unauthenticated") })
+        XCTAssertTrue(warnings.contains { $0.message.contains("unverified") })
+    }
+
+    func testCustomModelRequiresAcknowledgementThenBypassesDefaultMemoryEstimate() async {
+        let (_, probe, defaults) = context(); probe.physicalMemory = 1_000; probe.script = nil
+        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        var config = manager.configuration(for: .llamaChat); config.llama?.repository = "custom/repo"
+        manager.updateConfiguration(config, for: .llamaChat)
+        await manager.start(.llamaChat)
+        XCTAssertEqual(manager.presentedFailure?.message, "Launch confirmation is required.")
+        await manager.start(.llamaChat, warningsAcknowledged: true)
+        XCTAssertEqual(manager.presentedFailure?.message, "Could not locate start_llama_network.sh.")
+    }
+
+    func testLocalhostLaunchDoesNotRequireTailscaleAndUsesLoopbackHealth() async throws {
+        let (directory, probe, defaults) = context(); probe.commands["tailscale"] = nil; probe.tailnetIP = nil; probe.healthy = true
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("start_llama_network.sh")
+        try "#!/bin/bash\ntrap 'exit 0' TERM\nwhile true; do sleep 0.1; done\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script; probe.processRunningCheck = { kill($0, 0) == 0 }
+        let factory = FakeProcessFactory(); probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
+        var config = manager.configuration(for: .llamaChat); config.bindMode = .localhost; manager.updateConfiguration(config, for: .llamaChat)
+        await manager.start(.llamaChat)
+        XCTAssertEqual(probe.lastHealthHost, "127.0.0.1")
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.endpoint, "http://127.0.0.1:11437/v1")
+        await manager.stop(.llamaChat)
+    }
+
+    func testLanLaunchUsesLoopbackHealthAndLanDisplayEndpoint() async throws {
+        let (directory, probe, defaults) = context(); probe.healthy = true
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("start_llama_network.sh")
+        try "#!/bin/bash\ntrap 'exit 0' TERM\nwhile true; do sleep 0.1; done\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script; probe.processRunningCheck = { kill($0, 0) == 0 }
+        let factory = FakeProcessFactory(); probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
+        var config = manager.configuration(for: .llamaChat); config.bindMode = .lan; manager.updateConfiguration(config, for: .llamaChat)
+        await manager.start(.llamaChat, warningsAcknowledged: true)
+        XCTAssertEqual(probe.lastHealthHost, "127.0.0.1")
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.endpoint, "http://192.168.1.10:11437/v1")
+        await manager.stop(.llamaChat)
     }
 }
 

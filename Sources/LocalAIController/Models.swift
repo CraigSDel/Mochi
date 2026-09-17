@@ -9,6 +9,83 @@ enum ServiceState: String, Codable, Sendable {
     case unavailable, stopped, starting, running, stopping, failed, external
 }
 
+enum BindMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case tailscale, localhost, lan
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .tailscale: "Tailscale"; case .localhost: "Localhost"; case .lan: "Local network" }
+    }
+}
+
+enum DownloadPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
+    case cachedOnly, allowDownloads
+    var id: String { rawValue }
+    var title: String { self == .cachedOnly ? "Cached only" : "Allow downloads" }
+}
+
+struct LlamaLaunchConfiguration: Codable, Equatable, Sendable {
+    var repository: String
+    var filename: String
+    var alias: String
+    var contextSize: Int
+    var gpuLayers: Int
+}
+
+struct OllamaLaunchConfiguration: Codable, Equatable, Sendable {
+    var chatModel: String
+    var autocompleteModel: String
+    var embeddingModel: String
+    var flashAttention: Bool
+    var kvCacheType: String
+    var contextLength: Int
+    var parallelRequests: Int
+    var maxLoadedModels: Int
+}
+
+struct ServiceLaunchConfiguration: Codable, Equatable, Sendable {
+    var port: Int
+    var bindMode: BindMode
+    var downloadPolicy: DownloadPolicy
+    var llama: LlamaLaunchConfiguration?
+    var ollama: OllamaLaunchConfiguration?
+
+    static func defaultValue(for id: ServiceID) -> Self {
+        let common = (BindMode.tailscale, DownloadPolicy.cachedOnly)
+        switch id {
+        case .llamaChat:
+            return .init(port: 11437, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "unsloth/Qwen3.8-27B-GGUF", filename: "Qwen3.8-27B-UD-Q4_K_M.gguf", alias: "Qwen3.8-27B", contextSize: 16_384, gpuLayers: 99), ollama: nil)
+        case .autocomplete:
+            return .init(port: 11435, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", filename: "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", alias: "Qwen2.5-Coder-1.5B", contextSize: 8_192, gpuLayers: 99), ollama: nil)
+        case .embeddings:
+            return .init(port: 11436, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "nomic-ai/nomic-embed-text-v1.5-GGUF", filename: "nomic-embed-text-v1.5.Q8_0.gguf", alias: "nomic-embed-text", contextSize: 8_192, gpuLayers: 99), ollama: nil)
+        case .ollama:
+            return .init(port: 11434, bindMode: common.0, downloadPolicy: common.1, llama: nil, ollama: .init(chatModel: "qwen3.8:27b", autocompleteModel: "qwen2.5-coder:1.5b", embeddingModel: "nomic-embed-text:v1.5", flashAttention: true, kvCacheType: "q8_0", contextLength: 16_384, parallelRequests: 2, maxLoadedModels: 1))
+        }
+    }
+
+    func hasCustomModels(comparedTo defaults: Self) -> Bool {
+        if let llama, let baseline = defaults.llama {
+            return llama.repository != baseline.repository || llama.filename != baseline.filename || llama.alias != baseline.alias
+        }
+        if let ollama, let baseline = defaults.ollama {
+            return ollama.chatModel != baseline.chatModel || ollama.autocompleteModel != baseline.autocompleteModel || ollama.embeddingModel != baseline.embeddingModel
+        }
+        return false
+    }
+}
+
+struct ConfigurationIssue: Identifiable, Equatable, Sendable {
+    let field: String
+    let message: String
+    var id: String { "\(field):\(message)" }
+}
+
+struct LaunchWarning: Identifiable, Equatable, Sendable {
+    let serviceID: ServiceID
+    let message: String
+    var id: String { "\(serviceID.rawValue):\(message)" }
+}
+
 struct ServiceDefinition: Identifiable, Sendable {
     let id: ServiceID
     let name: String
@@ -40,6 +117,7 @@ struct ManagedProcessRecord: Codable, Sendable {
     let expectedCommand: String
     let startedAt: Date
     let logPath: String
+    let bindMode: BindMode?
 }
 
 struct ServiceFailure: Identifiable, Sendable {

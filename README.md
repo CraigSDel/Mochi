@@ -15,15 +15,18 @@ The app manages:
 
 - Apple Silicon Mac running macOS 14 or later
 - Xcode command-line tools or Xcode with Swift 6
-- Tailscale installed and connected
+- Tailscale installed and connected when using the default Tailscale bind mode
 - `llama.cpp` for the three llama.cpp services
 - Ollama for the Ollama service
 
 Install runtime dependencies separately with Homebrew if needed:
 
 ```bash
-brew install llama.cpp ollama tailscale lsof
+brew install llama.cpp ollama tailscale
 ```
+
+Port checks use the `lsof` utility included with macOS at `/usr/sbin/lsof`;
+installing a separate Homebrew copy is not required.
 
 Connect Tailscale before starting services:
 
@@ -31,9 +34,9 @@ Connect Tailscale before starting services:
 tailscale up
 ```
 
-The controller never installs dependencies or runs privileged commands. Before
-starting services, it asks whether to use cached models only or explicitly
-allow downloads for missing configured models.
+The controller never installs dependencies or runs privileged commands. Each
+service screen controls whether startup uses cached models only or explicitly
+allows downloads for missing configured models.
 
 ## Build the app
 
@@ -69,11 +72,9 @@ Controller**.
 
 The Services sidebar shows each runtime and its current state:
 
-- **Start** asks whether to use cached models only or allow missing models to be
-  downloaded before starting one service.
+- **Start** launches one service with the configuration shown on its screen.
 - **Stop** gracefully stops a service launched by the controller.
-- **Start All** shows the same download confirmation, then starts Ollama and the
-  three compatible llama.cpp services.
+- **Start All** validates and uses the saved configuration for all four services.
 - **Stop All** stops all verified controller-managed services.
 - **Copy Logs**, **Clear**, and **Reveal** manage each service's local log.
 
@@ -83,7 +84,7 @@ controller, it is marked **External** and will not be terminated.
 When quitting with managed services active, choose whether to keep them
 running, stop them, or cancel quitting.
 
-## Ports and settings
+## Launch configuration
 
 The default ports are:
 
@@ -94,9 +95,21 @@ The default ports are:
 | Workspace embeddings | `11436` |
 | llama.cpp chat | `11437` |
 
-The llama.cpp chat port can be changed under **Local AI Controller → Settings**.
-The same screen provides an optional **Launch at Login** setting, disabled by
-default.
+Select a service to configure its port, network binding, download policy, and
+model identifiers directly above the Start button. Expand **Advanced** to tune
+context size, GPU layers, or Ollama runtime settings. Configurations are saved
+per service between launches, and **Reset to Defaults** restores the values
+listed by the bundled launcher scripts.
+
+The available bind modes are **Tailscale**, **Localhost**, and **Local network**.
+Local-network mode exposes an unauthenticated API and therefore requires an
+explicit confirmation on every launch. Custom model identifiers also require
+confirmation because their memory requirements have not been verified. Fields
+are locked while their service is active; stop the service before editing its
+next-launch configuration.
+
+The separate Settings window provides the optional **Launch at Login** setting,
+disabled by default.
 
 ## Model recommendations
 
@@ -120,7 +133,7 @@ Service logs, process records, and the recommendation cache are stored under:
 ~/Library/Application Support/Local AI Controller/
 ```
 
-App preferences, including the chat port, are stored through macOS user
+Per-service launch profiles and app preferences are stored through macOS user
 defaults.
 
 ## Troubleshooting
@@ -128,12 +141,12 @@ defaults.
 - **Runtime not installed:** Install the named dependency outside the app and
   refresh the service status.
 - **Tailscale not connected:** Run `tailscale up`, confirm it has an IPv4
-  address, and retry.
-- **Model missing:** Start again and choose **Allow Downloads**, or install the
-  model outside the controller. **Cached Only** uses llama.cpp offline mode and
-  Ollama's no-pull mode.
-- **Port occupied:** Stop the external process or choose another llama.cpp chat
-  port in Settings.
+  address, and retry, or select Localhost on the service screen.
+- **Model missing:** Select **Allow downloads** on the service screen, or install
+  the model outside the controller. **Cached only** uses llama.cpp offline mode
+  and Ollama's no-pull mode.
+- **Port occupied:** Stop the external process or choose another port on the
+  service screen.
 - **Service fails during startup:** Open that service and inspect its log for
   the exact runtime error. Preflight and launcher failures also display an
   immediate alert with corrective guidance and a **Reveal Log** button.

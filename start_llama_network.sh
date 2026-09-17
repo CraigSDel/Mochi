@@ -4,9 +4,10 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-}"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
 readonly SCRIPT_NAME=${0##*/}
+readonly LSOF=/usr/sbin/lsof
 BIND_MODE="tailscale"
 MODEL_CHOICE=""
 INSTALL_MISSING=true
@@ -67,7 +68,7 @@ ensure_tailscale() {
 }
 
 listener_pids() {
-  lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true
+  "$LSOF" -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true
 }
 
 parse_args() {
@@ -97,6 +98,7 @@ parse_args() {
 
 parse_args "$@"
 require_macos
+[ -x "$LSOF" ] || die "The macOS system utility $LSOF is unavailable."
 
 if [ -z "$MODEL_CHOICE" ]; then
   [ -t 0 ] || die "No terminal is available; specify --model."
@@ -111,7 +113,6 @@ if [ -z "$MODEL_CHOICE" ]; then
 fi
 
 install_formula llama-server llama.cpp
-install_formula lsof lsof
 
 TAILSCALE_IP=""
 case "$BIND_MODE" in

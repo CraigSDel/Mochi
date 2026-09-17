@@ -4,9 +4,10 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 077
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-}"
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
 readonly SCRIPT_NAME=${0##*/}
+readonly LSOF=/usr/sbin/lsof
 PORT="${OLLAMA_PORT:-11434}"
 BIND_MODE="tailscale"
 INSTALL_MISSING=true
@@ -79,7 +80,7 @@ ensure_tailscale() {
   printf '%s\n' "$ip"
 }
 
-listener_pids() { lsof -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true; }
+listener_pids() { "$LSOF" -nP -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true; }
 
 parse_args() {
   while [ "$#" -gt 0 ]; do
@@ -121,9 +122,9 @@ stop_existing_ollama() {
 
 parse_args "$@"
 [ "$(uname -s)" = "Darwin" ] || die "This setup currently supports macOS only."
+[ -x "$LSOF" ] || die "The macOS system utility $LSOF is unavailable."
 install_formula ollama ollama
 install_formula curl curl
-install_formula lsof lsof
 
 case "$BIND_MODE" in
   tailscale) BIND_HOST=$(ensure_tailscale) ;;
