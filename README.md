@@ -135,8 +135,13 @@ defaults.
 - **Port occupied:** Stop the external process or choose another llama.cpp chat
   port in Settings.
 - **Service fails during startup:** Open that service and inspect its log for
-  the exact runtime error.
+  the exact runtime error. Preflight and launcher failures also display an
+  immediate alert with corrective guidance and a **Reveal Log** button.
 - **Recommendations unavailable:** Registry or network failures do not affect
   model controls. Use **Check Now** after connectivity returns.
+
+Every start attempt appends timestamped diagnostics to the service log before
+checking dependencies, ports, memory, disk space, or Tailscale. Earlier attempts
+remain available after a retry or app relaunch.
 
 For the detailed network and editor configuration, see [how_to.md](how_to.md).

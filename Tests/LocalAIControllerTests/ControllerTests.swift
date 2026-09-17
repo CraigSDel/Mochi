@@ -37,3 +37,255 @@ final class RecommendationModelTests: XCTestCase {
         XCTAssertEqual(ControllerPolicy.compatibility(sizeBytes: 8_000_000_000, architectureKnown: false, gated: false, multimodal: false, cloudOnly: false, physicalMemory: memory), .unverified)
     }
 }
+
+@MainActor
+private final class FakeProbe: SystemProbing {
+    let supportDirectory: URL
+    var physicalMemory: UInt64 = 36 * 1_073_741_824
+    var commands: [String: String] = ["tailscale": "/fake/tailscale", "llama-server": "/fake/llama-server", "ollama": "/fake/ollama"]
+    var occupiedPorts: Set<Int> = []
+    var portListeningCheck: ((Int) -> Bool)?
+    var tailnetIP: String? = "100.64.0.1"
+    var diskBytes: Int64 = 100_000_000_000
+    var script: URL?
+    var processRunning = false
+    var processRunningCheck: ((Int32) -> Bool)?
+    var processCommandValue = "bash start_llama_network.sh"
+    var healthy = false
+    var lastHealthPort: Int?
+    init(directory: URL) { supportDirectory = directory }
+    func commandPath(_ command: String) -> String? { commands[command] }
+    func isPortListening(_ port: Int) -> Bool { portListeningCheck?(port) ?? occupiedPorts.contains(port) }
+    func tailscaleIP() -> String? { tailnetIP }
+    func availableDiskBytes() -> Int64 { diskBytes }
+    func scriptURL(named name: String) -> URL? { script }
+    func isProcessRunning(_ pid: Int32) -> Bool { processRunningCheck?(pid) ?? processRunning }
+    func processCommand(_ pid: Int32) -> String { processCommandValue }
+    func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool { lastHealthPort = port; return healthy }
+}
+
+@MainActor
+private final class FakeProcessFactory: ProcessMaking {
+    var onMake: (() -> Void)?
+    var lastProcess: Process?
+    func makeProcess() -> Process { onMake?(); let process = Process(); lastProcess = process; return process }
+}
+
+@MainActor
+final class StartupDiagnosticsTests: XCTestCase {
+    private func context() -> (URL, FakeProbe, UserDefaults) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let probe = FakeProbe(directory: directory)
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        return (directory, probe, defaults)
+    }
+
+    func testMissingLlamaRuntimeCreatesLogFailureAndAlert() async throws {
+        let (directory, probe, defaults) = context(); probe.commands["llama-server"] = nil
+        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        await manager.start(.llamaChat)
+        let service = manager.services.first { $0.id == .llamaChat }
+        XCTAssertEqual(service?.state, .failed)
+        XCTAssertEqual(manager.presentedFailure?.guidance, "Run: brew install llama.cpp")
+        let log = try String(contentsOf: directory.appendingPathComponent("llamaChat.log"), encoding: .utf8)
+        XCTAssertTrue(log.contains("llama-server is not installed"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: manager.logURL(.llamaChat).path))
+    }
+
+    func testMissingOllamaHasInstallationGuidance() async {
+        let (_, probe, defaults) = context(); probe.commands["ollama"] = nil
+        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        await manager.start(.ollama)
+        XCTAssertEqual(manager.presentedFailure?.guidance, "Run: brew install ollama")
+        XCTAssertTrue(manager.services.first { $0.id == .ollama }?.logText.contains("ollama is not installed") == true)
+    }
+
+    func testDisconnectedTailscaleIsLogged() async {
+        let (_, probe, defaults) = context(); probe.tailnetIP = nil
+        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        await manager.start(.autocomplete)
+        XCTAssertEqual(manager.services.first { $0.id == .autocomplete }?.state, .failed)
+        XCTAssertTrue(manager.services.first { $0.id == .autocomplete }?.logText.contains("Tailscale is not connected") == true)
+    }
+
+    func testOccupiedPortLowDiskAndUnsafeMemoryAreObservable() async {
+        do {
+            let (_, probe, defaults) = context(); probe.occupiedPorts.insert(11435)
+            let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false); await manager.start(.autocomplete)
+            XCTAssertTrue(manager.presentedFailure?.message.contains("occupied") == true)
+        }
+        do {
+            let (_, probe, defaults) = context(); probe.diskBytes = 1_000
+            let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false); await manager.start(.embeddings)
+            XCTAssertTrue(manager.presentedFailure?.message.contains("disk space") == true)
+        }
+        do {
+            let (_, probe, defaults) = context(); probe.physicalMemory = 15 * 1_073_741_824
+            let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false); await manager.start(.llamaChat)
+            XCTAssertTrue(manager.presentedFailure?.message.contains("memory") == true)
+        }
+    }
+
+    func testEarlyExitRemainsFailedAfterRefresh() async throws {
+        let (directory, probe, defaults) = context()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("exit.sh")
+        try "#!/bin/bash\necho runtime-boom\nexit 7\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script
+        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        await manager.start(.llamaChat)
+        try await Task.sleep(for: .milliseconds(200))
+        await manager.refreshStatuses()
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.state, .failed)
+        XCTAssertTrue(manager.services.first { $0.id == .llamaChat }?.logText.contains("status=7") == true)
+        XCTAssertNotNil(manager.presentedFailure)
+    }
+
+    func testDownloadModesProduceAuditableArguments() {
+        let script = URL(fileURLWithPath: "/tmp/start.sh")
+        XCTAssertTrue(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", allowDownloads: false).contains("--offline"))
+        XCTAssertFalse(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", allowDownloads: true).contains("--offline"))
+        XCTAssertTrue(ServiceManager.launchArguments(id: .ollama, script: script, modelChoice: nil, allowDownloads: false).contains("--no-pull"))
+    }
+
+    func testSuccessfulRetryClearsFailureAndRetainsHistory() async throws {
+        let (directory, probe, defaults) = context(); probe.commands["llama-server"] = nil
+        let factory = FakeProcessFactory()
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
+        await manager.start(.llamaChat)
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.state, .failed)
+
+        let script = directory.appendingPathComponent("running.sh")
+        try "#!/bin/bash\nsleep 5\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.commands["llama-server"] = "/fake/llama-server"; probe.script = script
+        factory.onMake = { probe.occupiedPorts.insert(11437); probe.processRunning = true; probe.healthy = true }
+        await manager.start(.llamaChat)
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.state, .running)
+        XCTAssertNil(manager.presentedFailure)
+        let log = manager.services.first { $0.id == .llamaChat }?.logText ?? ""
+        XCTAssertTrue(log.contains("llama-server is not installed"))
+        XCTAssertEqual(log.components(separatedBy: "START ATTEMPT").count - 1, 2)
+        factory.lastProcess?.terminate()
+    }
+
+    func testIntentionalSignalTerminationEndsStoppedWithoutFailure() async throws {
+        let (directory, probe, defaults) = context()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("start_llama_network.sh")
+        try "#!/bin/bash\ntrap 'exit 0' TERM\nwhile true; do sleep 0.1; done\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script
+        probe.healthy = true
+        probe.processRunningCheck = { kill($0, 0) == 0 }
+        let factory = FakeProcessFactory()
+        probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
+        await manager.start(.llamaChat)
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.state, .running)
+        await manager.stop(.llamaChat)
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.state, .stopped)
+        XCTAssertNil(manager.presentedFailure)
+    }
+
+    func testManagedServiceContinuesUsingRecordedPortAfterPreferenceChanges() async throws {
+        let (directory, probe, defaults) = context()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("start_llama_network.sh")
+        try "#!/bin/bash\ntrap 'exit 0' TERM\nwhile true; do sleep 0.1; done\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script; probe.healthy = true
+        probe.processRunningCheck = { kill($0, 0) == 0 }
+        let factory = FakeProcessFactory()
+        probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
+        await manager.start(.llamaChat)
+        manager.chatPort = 12000
+        probe.lastHealthPort = nil
+        await manager.refreshStatuses()
+        XCTAssertEqual(probe.lastHealthPort, 11437)
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.endpoint, "http://100.64.0.1:11437/v1")
+        await manager.stop(.llamaChat)
+    }
+
+    func testStopTimeoutRetainsOwnershipAndCanFinishLater() async throws {
+        let (directory, probe, defaults) = context()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("start_llama_network.sh")
+        try "#!/bin/bash\ntrap '' TERM\nwhile true; do sleep 0.1; done\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script; probe.healthy = true; probe.processRunning = true
+        let factory = FakeProcessFactory()
+        probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false, stopPollAttempts: 1)
+        await manager.start(.llamaChat)
+        await manager.stop(.llamaChat)
+        let service = manager.services.first { $0.id == .llamaChat }
+        XCTAssertEqual(service?.state, .running)
+        XCTAssertEqual(service?.pid, factory.lastProcess?.processIdentifier)
+        XCTAssertTrue(service?.statusText.contains("timed out") == true)
+        XCTAssertTrue(manager.hasManagedRunningServices)
+        if let pid = factory.lastProcess?.processIdentifier { kill(pid, SIGKILL) }
+        probe.processRunning = false
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.state, .stopped)
+        XCTAssertNil(manager.presentedFailure)
+    }
+
+    func testStartingProcessCountsAsManagedAndLiveLogCanBeClearedSafely() async throws {
+        let (directory, probe, defaults) = context()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("start_llama_network.sh")
+        try "#!/bin/bash\ntrap 'exit 0' TERM\nwhile true; do echo tick; sleep 0.05; done\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script; probe.healthy = false
+        probe.processRunningCheck = { kill($0, 0) == 0 }
+        let factory = FakeProcessFactory()
+        probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
+        await manager.start(.llamaChat)
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.state, .starting)
+        XCTAssertTrue(manager.hasManagedRunningServices)
+
+        manager.clearLog(.llamaChat)
+        try await Task.sleep(for: .milliseconds(200))
+        let data = try Data(contentsOf: manager.logURL(.llamaChat))
+        XCTAssertFalse(data.contains(0))
+        XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("tick"))
+        await manager.stop(.llamaChat)
+    }
+
+    func testExternalServiceHasEndpoint() async {
+        let (_, probe, defaults) = context(); probe.occupiedPorts.insert(11435)
+        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        await manager.refreshStatuses()
+        let service = manager.services.first { $0.id == .autocomplete }
+        XCTAssertEqual(service?.state, .external)
+        XCTAssertEqual(service?.endpoint, "http://100.64.0.1:11435/v1")
+    }
+}
+
+private struct StubRecommendationProvider: RecommendationProvider {
+    let sourceName: String
+    let result: Result<[ModelRecommendation], Error>
+    func fetch() async throws -> [ModelRecommendation] { try result.get() }
+}
+
+@MainActor
+final class RecommendationStoreResilienceTests: XCTestCase {
+    func testCompleteProviderFailureRetainsCacheAndDoesNotAdvanceLastChecked() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let cache = directory.appendingPathComponent("recommendations.json")
+        let cached = ModelRecommendation(
+            id: "cached", name: "Cached", source: "Registry", runtime: "llama.cpp", role: .chat,
+            quantization: "Q4_K_M", sizeBytes: 1_000, context: "test", license: "test",
+            compatibility: .compatible, rationale: "test", updatedAt: nil
+        )
+        try JSONEncoder().encode([cached]).write(to: cache)
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let provider = StubRecommendationProvider(sourceName: "Registry", result: .failure(URLError(.notConnectedToInternet)))
+        let store = RecommendationStore(providers: [provider], defaults: defaults, cacheURL: cache, startTimer: false)
+        await store.refresh()
+        XCTAssertEqual(store.recommendations.map(\.id), ["cached"])
+        XCTAssertNil(store.lastChecked)
+        let persisted = try JSONDecoder().decode([ModelRecommendation].self, from: Data(contentsOf: cache))
+        XCTAssertEqual(persisted.map(\.id), ["cached"])
+    }
+}

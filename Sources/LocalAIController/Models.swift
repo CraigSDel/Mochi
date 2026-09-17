@@ -42,6 +42,16 @@ struct ManagedProcessRecord: Codable, Sendable {
     let logPath: String
 }
 
+struct ServiceFailure: Identifiable, Sendable {
+    let serviceID: ServiceID
+    let serviceName: String
+    let message: String
+    let guidance: String
+    let timestamp: Date
+    let logURL: URL
+    var id: String { "\(serviceID.rawValue)-\(timestamp.timeIntervalSince1970)" }
+}
+
 enum RecommendationRole: String, Codable, CaseIterable, Sendable {
     case chat = "Chat / reasoning"
     case coding = "Coding / autocomplete"

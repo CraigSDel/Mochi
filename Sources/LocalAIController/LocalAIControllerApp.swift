@@ -75,6 +75,14 @@ struct MainView: View {
             Button("Stop All") { Task { await manager.stopAll() } }
             Button { Task { await manager.refreshStatuses() } } label: { Image(systemName: "arrow.clockwise") }
         }
+        .alert(item: $manager.presentedFailure) { failure in
+            Alert(
+                title: Text("\(failure.serviceName) failed"),
+                message: Text("\(failure.message)\n\n\(failure.guidance)"),
+                primaryButton: .default(Text("Reveal Log")) { NSWorkspace.shared.activateFileViewerSelecting([failure.logURL]) },
+                secondaryButton: .cancel(Text("Dismiss"))
+            )
+        }
     }
 
     private func icon(for state: ServiceState) -> String {

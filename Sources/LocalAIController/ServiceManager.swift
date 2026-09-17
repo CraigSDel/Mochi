@@ -4,15 +4,19 @@ import Combine
 @MainActor
 final class ServiceManager: ObservableObject {
     @Published private(set) var services: [ServiceSnapshot]
-    @Published var chatPort: Int {
-        didSet { UserDefaults.standard.set(chatPort, forKey: "llamaChatPort") }
-    }
+    @Published var presentedFailure: ServiceFailure?
+    @Published var chatPort: Int { didSet { defaults.set(chatPort, forKey: "llamaChatPort") } }
     @Published var launchAtLogin = false
-    @Published var generalMessage = ""
 
-    private let fileManager = FileManager.default
+    private let fileManager: FileManager
+    private let probe: any SystemProbing
+    private let processFactory: any ProcessMaking
+    private let defaults: UserDefaults
+    private let stopPollAttempts: Int
     private var timer: Timer?
     private var processes: [ServiceID: Process] = [:]
+    private var outputHandles: [ServiceID: FileHandle] = [:]
+    private var stopRequested: Set<ServiceID> = []
     private let definitions: [ServiceDefinition] = [
         .init(id: .llamaChat, name: "Qwen Chat", detail: "Qwen3.8-27B chat and reasoning", runtime: "llama.cpp", defaultPort: 11437, modelChoice: "chat", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 17_000_000_000, supported: true, unavailableReason: nil),
         .init(id: .autocomplete, name: "Code Autocomplete", detail: "Qwen2.5-Coder-1.5B", runtime: "llama.cpp", defaultPort: 11435, modelChoice: "autocomplete", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 1_200_000_000, supported: true, unavailableReason: nil),
@@ -20,269 +24,167 @@ final class ServiceManager: ObservableObject {
         .init(id: .ollama, name: "Ollama", detail: "Installed chat, coding, and embedding models", runtime: "Ollama", defaultPort: 11434, modelChoice: nil, executable: "ollama", modelFormat: "Ollama manifest", estimatedBytes: 20_000_000_000, supported: true, unavailableReason: nil)
     ]
 
-    init() {
-        let saved = UserDefaults.standard.integer(forKey: "llamaChatPort")
-        chatPort = saved == 0 ? 11437 : saved
+    init(probe: (any SystemProbing)? = nil, processFactory: (any ProcessMaking)? = nil, defaults: UserDefaults = .standard, fileManager: FileManager = .default, startTimer: Bool = true, stopPollAttempts: Int = 20) {
+        self.fileManager = fileManager; self.defaults = defaults
+        self.stopPollAttempts = stopPollAttempts
+        self.probe = probe ?? LiveSystemProbe(fileManager: fileManager)
+        self.processFactory = processFactory ?? LiveProcessFactory()
+        let saved = defaults.integer(forKey: "llamaChatPort"); chatPort = saved == 0 ? 11437 : saved
         services = definitions.map { ServiceSnapshot(definition: $0) }
+        try? fileManager.createDirectory(at: self.probe.supportDirectory, withIntermediateDirectories: true)
+        for index in services.indices { ensureLog(services[index].id); services[index].logText = tail(logURL(services[index].id).path) }
         Task { await refreshStatuses() }
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in await self?.refreshStatuses() }
-        }
+        if startTimer { timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in Task { @MainActor in await self?.refreshStatuses() } } }
     }
 
     var hasManagedRunningServices: Bool {
-        services.contains { $0.state == .running && $0.pid != nil }
-    }
-
-    func port(for id: ServiceID) -> Int? {
-        id == .llamaChat ? chatPort : definitions.first(where: { $0.id == id })?.defaultPort
-    }
-
-    func startAll(allowDownloads: Bool = false) async {
-        for id in [ServiceID.ollama, .llamaChat, .autocomplete, .embeddings] {
-            await start(id, allowDownloads: allowDownloads)
+        services.contains { service in
+            service.pid != nil && [.starting, .running, .stopping].contains(service.state)
         }
     }
+    func port(for id: ServiceID) -> Int? { id == .llamaChat ? chatPort : definitions.first(where: { $0.id == id })?.defaultPort }
 
-    func stopAll() async {
-        for id in [ServiceID.llamaChat, .autocomplete, .embeddings, .ollama] {
-            await stop(id)
-        }
+    static func launchArguments(id: ServiceID, script: URL, modelChoice: String?, allowDownloads: Bool) -> [String] {
+        if id == .ollama { return [script.path, "--bind", "tailscale", "--no-install", "--no-tailscale-up"] + (allowDownloads ? [] : ["--no-pull"]) }
+        return [script.path, "--model", modelChoice!, "--bind", "tailscale", "--no-install", "--no-tailscale-up"] + (allowDownloads ? [] : ["--offline"])
     }
+
+    func startAll(allowDownloads: Bool = false) async { for id in [ServiceID.ollama, .llamaChat, .autocomplete, .embeddings] { await start(id, allowDownloads: allowDownloads) } }
+    func stopAll() async { for id in [ServiceID.llamaChat, .autocomplete, .embeddings, .ollama] { await stop(id) } }
 
     func start(_ id: ServiceID, allowDownloads: Bool = false) async {
         guard let index = services.firstIndex(where: { $0.id == id }) else { return }
         let definition = services[index].definition
-        guard definition.supported else {
-            services[index].state = .unavailable
-            services[index].statusText = definition.unavailableReason ?? "Unsupported"
-            return
-        }
-        guard let port = port(for: id), ControllerPolicy.validPort(port) else {
-            fail(index, "Port must be between 1024 and 65535.")
-            return
-        }
-        guard !isPortListening(port) else {
-            await refreshStatuses()
-            if services[index].state != .external { fail(index, "Port \(port) is already occupied.") }
-            return
-        }
-        guard commandPath(definition.executable ?? "") != nil else {
-            fail(index, "\(definition.executable ?? definition.runtime) is not installed. Install it separately, then refresh.")
-            return
-        }
-        guard (definition.runtime == "Ollama" || definition.modelFormat == "GGUF"),
-              ControllerPolicy.fits(sizeBytes: definition.estimatedBytes) else {
-            fail(index, "Model format or estimated memory use is not safe for this Mac.")
-            return
-        }
-        guard commandPath("tailscale") != nil, tailscaleIP() != nil else {
-            fail(index, "Tailscale is not connected. Connect it outside the app and retry.")
-            return
-        }
-        guard hasMinimumFreeDisk() else {
-            fail(index, "Less than 5 GB of free disk space is available.")
-            return
-        }
+        ensureLog(id); append(id, "========== START ATTEMPT =========="); append(id, "Mode: \(allowDownloads ? "downloads explicitly allowed" : "cached models only")")
+        services[index].state = .starting; services[index].statusText = "Running preflight checks…"; presentedFailure = nil
 
+        guard let port = port(for: id), ControllerPolicy.validPort(port) else { fail(index, "Port must be between 1024 and 65535.", "Choose a valid port in Settings."); return }
+        let occupied = probe.isPortListening(port); append(id, "Port \(port): \(occupied ? "occupied" : "available")")
+        guard !occupied else { fail(index, "Port \(port) is already occupied.", "Stop the external service or choose another chat port."); return }
+        guard let executable = probe.commandPath(definition.executable ?? "") else {
+            fail(index, "\(definition.executable ?? definition.runtime) is not installed.", "Run: brew install \(id == .ollama ? "ollama" : "llama.cpp")"); return
+        }
+        append(id, "Runtime executable: \(executable)")
+        let safe = (definition.runtime == "Ollama" || definition.modelFormat == "GGUF") && ControllerPolicy.fits(sizeBytes: definition.estimatedBytes, physicalMemory: probe.physicalMemory)
+        append(id, "Model format: \(definition.modelFormat); estimated size: \(definition.estimatedBytes ?? 0) bytes; memory fit: \(safe)")
+        guard safe else { fail(index, "Model format or estimated memory use is not safe for this Mac.", "Choose a smaller compatible model."); return }
+        guard let tailscale = probe.commandPath("tailscale") else { fail(index, "Tailscale is not installed.", "Run: brew install tailscale"); return }
+        append(id, "Tailscale executable: \(tailscale)")
+        guard let host = probe.tailscaleIP() else { fail(index, "Tailscale is not connected.", "Connect Tailscale outside the app, then retry."); return }
+        append(id, "Tailscale IPv4: \(host)")
+        let disk = probe.availableDiskBytes(); append(id, "Available disk: \(disk) bytes")
+        guard disk >= 5_000_000_000 else { fail(index, "Less than 5 GB of free disk space is available.", "Free disk space, then retry."); return }
         let scriptName = id == .ollama ? "start_ollama_network.sh" : "start_llama_network.sh"
-        guard let script = bundledScript(named: scriptName) else {
-            fail(index, "Could not locate \(scriptName).")
-            return
+        guard let script = probe.scriptURL(named: scriptName) else { fail(index, "Could not locate \(scriptName).", "Rebuild the app so launcher resources are bundled."); return }
+
+        let handle: FileHandle
+        do { handle = try FileHandle(forWritingTo: logURL(id)); try handle.seekToEnd() } catch { fail(index, "Could not open the service log.", error.localizedDescription); return }
+        outputHandles[id] = handle
+        let process = processFactory.makeProcess(); process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = Self.launchArguments(id: id, script: script, modelChoice: definition.modelChoice, allowDownloads: allowDownloads)
+        var environment = ProcessInfo.processInfo.environment; environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"; environment["LLAMA_CHAT_PORT"] = String(chatPort)
+        process.environment = environment; process.standardOutput = handle; process.standardError = handle
+        append(id, "Launcher: /bin/bash \(process.arguments?.joined(separator: " ") ?? "")")
+        process.terminationHandler = { [weak self] ended in
+            Task { @MainActor in self?.handleTermination(id, status: ended.terminationStatus, reason: ended.terminationReason) }
         }
-        let paths = supportPaths()
-        try? fileManager.createDirectory(at: paths.directory, withIntermediateDirectories: true)
-        let logURL = paths.directory.appendingPathComponent("\(id.rawValue).log")
-        fileManager.createFile(atPath: logURL.path, contents: nil)
-        guard let handle = try? FileHandle(forWritingTo: logURL) else {
-            fail(index, "Could not open the service log.")
-            return
-        }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        if id == .ollama {
-            process.arguments = [script.path, "--bind", "tailscale", "--no-install", "--no-tailscale-up"] + (allowDownloads ? [] : ["--no-pull"])
-        } else {
-            process.arguments = [script.path, "--model", definition.modelChoice!, "--bind", "tailscale", "--no-install", "--no-tailscale-up"] + (allowDownloads ? [] : ["--offline"])
-        }
-        var environment = ProcessInfo.processInfo.environment
-        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
-        environment["LLAMA_CHAT_PORT"] = String(chatPort)
-        process.environment = environment
-        process.standardOutput = handle
-        process.standardError = handle
-        process.terminationHandler = { [weak self] _ in
-            try? handle.close()
-            Task { @MainActor in await self?.refreshStatuses() }
-        }
-        services[index].state = .starting
-        services[index].statusText = "Starting…"
         do {
-            try process.run()
-            processes[id] = process
-            let record = ManagedProcessRecord(serviceID: id, pid: process.processIdentifier, port: port, expectedCommand: scriptName, startedAt: Date(), logPath: logURL.path)
-            save(record)
-            services[index].pid = process.processIdentifier
-            services[index].endpoint = endpoint(for: id, port: port)
-            try? await Task.sleep(for: .seconds(1))
-            await refreshStatuses()
+            try process.run(); processes[id] = process; append(id, "Process started with PID \(process.processIdentifier)")
+            save(.init(serviceID: id, pid: process.processIdentifier, port: port, expectedCommand: scriptName, startedAt: Date(), logPath: logURL(id).path))
+            services[index].pid = process.processIdentifier; services[index].endpoint = endpoint(id, port, host)
+            try? await Task.sleep(for: .seconds(1)); await refreshStatuses()
         } catch {
+            outputHandles[id] = nil
             try? handle.close()
-            fail(index, error.localizedDescription)
+            fail(index, "Failed to launch the service.", error.localizedDescription)
         }
     }
 
     func stop(_ id: ServiceID) async {
-        guard let index = services.firstIndex(where: { $0.id == id }) else { return }
-        guard let record = loadRecord(id), validate(record) else {
-            if services[index].state == .external { services[index].statusText = "External process; not stopped for safety." }
+        guard let index = services.firstIndex(where: { $0.id == id }), let record = loadRecord(id), validate(record) else {
+            if let index = services.firstIndex(where: { $0.id == id }), services[index].state == .external { services[index].statusText = "External process; not stopped for safety." }; return
+        }
+        let hasLocalTerminationHandler = processes[id] != nil
+        stopRequested.insert(id)
+        services[index].state = .stopping; services[index].statusText = "Stopping…"; append(id, "Stop requested"); kill(record.pid, SIGTERM)
+        for _ in 0..<stopPollAttempts { if !probe.isProcessRunning(record.pid) { break }; try? await Task.sleep(for: .milliseconds(250)) }
+        if probe.isProcessRunning(record.pid) {
+            services[index].state = .running
+            services[index].statusText = "Stop timed out; process is still running"
+            services[index].pid = record.pid
+            append(id, "ERROR: Process did not stop after SIGTERM; ownership retained")
             return
         }
-        services[index].state = .stopping
-        services[index].statusText = "Stopping…"
-        kill(record.pid, SIGTERM)
-        for _ in 0..<20 {
-            if kill(record.pid, 0) != 0 { break }
-            try? await Task.sleep(for: .milliseconds(250))
-        }
-        removeRecord(id)
-        processes[id] = nil
+        if !hasLocalTerminationHandler { completeIntentionalStop(id) }
         await refreshStatuses()
     }
 
     func refreshStatuses() async {
         for index in services.indices {
-            let id = services[index].id
-            if !services[index].definition.supported {
-                services[index].state = .unavailable
-                services[index].statusText = services[index].definition.unavailableReason ?? "Unsupported"
-                continue
-            }
-            guard let port = port(for: id) else { continue }
+            let id = services[index].id; services[index].logText = tail(logURL(id).path)
             if let record = loadRecord(id), validate(record) {
-                let listening = isPortListening(port)
-                let healthy = listening ? await healthResponding(id, port: port) : false
-                services[index].state = healthy ? .running : .starting
-                services[index].statusText = healthy ? "Running and healthy" : "Process active; waiting for health"
-                services[index].pid = record.pid
-                services[index].endpoint = endpoint(for: id, port: port)
-                services[index].logText = tail(record.logPath)
-            } else if isPortListening(port) {
-                removeRecord(id)
-                services[index].state = .external
-                services[index].statusText = "External service on port \(port)"
-                services[index].pid = nil
-                services[index].endpoint = endpoint(for: id, port: port)
-            } else {
-                removeRecord(id)
-                services[index].state = .stopped
-                services[index].statusText = "Stopped"
-                services[index].pid = nil
-                services[index].endpoint = nil
+                let port = record.port
+                let listening = probe.isPortListening(port), host = probe.tailscaleIP() ?? "127.0.0.1"
+                let healthy = listening ? await probe.healthResponding(id, port: port, host: host) : false
+                services[index].state = healthy ? .running : .starting; services[index].statusText = healthy ? "Running and healthy" : "Process active; waiting for health"
+                services[index].pid = record.pid; services[index].endpoint = endpoint(id, port, host)
+            } else if let port = port(for: id), probe.isPortListening(port) {
+                let host = probe.tailscaleIP() ?? "127.0.0.1"
+                removeRecord(id); services[index].state = .external; services[index].statusText = "External service on port \(port)"; services[index].pid = nil; services[index].endpoint = endpoint(id, port, host)
+            } else if services[index].state != .failed {
+                removeRecord(id); services[index].state = .stopped; services[index].statusText = "Stopped"; services[index].pid = nil; services[index].endpoint = nil
             }
         }
     }
 
     func clearLog(_ id: ServiceID) {
-        let url = supportPaths().directory.appendingPathComponent("\(id.rawValue).log")
-        try? Data().write(to: url)
-        if let index = services.firstIndex(where: { $0.id == id }) { services[index].logText = "" }
-    }
-
-    func logURL(_ id: ServiceID) -> URL { supportPaths().directory.appendingPathComponent("\(id.rawValue).log") }
-
-    private func fail(_ index: Int, _ message: String) {
-        services[index].state = .failed
-        services[index].statusText = message
-    }
-
-    private func endpoint(for id: ServiceID, port: Int) -> String {
-        let host = tailscaleIP() ?? "127.0.0.1"
-        return id == .ollama ? "http://\(host):\(port)" : "http://\(host):\(port)/v1"
-    }
-
-    private func commandPath(_ command: String) -> String? {
-        guard !command.isEmpty else { return nil }
-        for directory in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"] {
-            let candidate = URL(fileURLWithPath: directory).appendingPathComponent(command).path
-            if fileManager.isExecutableFile(atPath: candidate) { return candidate }
+        if let handle = outputHandles[id] {
+            try? handle.truncate(atOffset: 0)
+            try? handle.seek(toOffset: 0)
+        } else {
+            try? Data().write(to: logURL(id))
         }
-        return runAndCapture("/usr/bin/which", [command]).flatMap { $0.isEmpty ? nil : $0 }
+        if let i = services.firstIndex(where: { $0.id == id }) { services[i].logText = "" }
     }
-
-    private func tailscaleIP() -> String? {
-        guard let executable = commandPath("tailscale") else { return nil }
-        return runAndCapture(executable, ["ip", "-4"])?.split(separator: "\n").first.map(String.init)
+    func logURL(_ id: ServiceID) -> URL { probe.supportDirectory.appendingPathComponent("\(id.rawValue).log") }
+    private func ensureLog(_ id: ServiceID) { try? fileManager.createDirectory(at: probe.supportDirectory, withIntermediateDirectories: true); if !fileManager.fileExists(atPath: logURL(id).path) { fileManager.createFile(atPath: logURL(id).path, contents: nil) } }
+    private func append(_ id: ServiceID, _ message: String) {
+        ensureLog(id); let line = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"
+        if let handle = outputHandles[id] {
+            try? handle.write(contentsOf: Data(line.utf8))
+        } else if let handle = try? FileHandle(forWritingTo: logURL(id)) {
+            _ = try? handle.seekToEnd(); try? handle.write(contentsOf: Data(line.utf8)); try? handle.close()
+        }
+        if let i = services.firstIndex(where: { $0.id == id }) { services[i].logText = tail(logURL(id).path) }
     }
-
-    private func isPortListening(_ port: Int) -> Bool {
-        guard let output = runAndCapture("/usr/sbin/lsof", ["-nP", "-tiTCP:\(port)", "-sTCP:LISTEN"]) else { return false }
-        return !output.isEmpty
+    private func fail(_ index: Int, _ message: String, _ guidance: String) {
+        let id = services[index].id; append(id, "ERROR: \(message) Guidance: \(guidance)"); services[index].state = .failed; services[index].statusText = message; services[index].pid = nil
+        presentedFailure = .init(serviceID: id, serviceName: services[index].definition.name, message: message, guidance: guidance, timestamp: Date(), logURL: logURL(id))
     }
-
-    private func healthResponding(_ id: ServiceID, port: Int) async -> Bool {
-        let host = tailscaleIP() ?? "127.0.0.1"
-        let path = id == .ollama ? "/api/tags" : "/health"
-        guard let url = URL(string: "http://\(host):\(port)\(path)") else { return false }
-        var request = URLRequest(url: url); request.timeoutInterval = 1
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            guard let status = (response as? HTTPURLResponse)?.statusCode else { return false }
-            return (200..<500).contains(status)
-        } catch { return false }
+    private func handleTermination(_ id: ServiceID, status: Int32, reason: Process.TerminationReason) {
+        guard let index = services.firstIndex(where: { $0.id == id }) else { return }
+        append(id, "Process terminated; status=\(status), reason=\(reason.rawValue)")
+        if let handle = outputHandles.removeValue(forKey: id) { try? handle.close() }
+        processes[id] = nil
+        if stopRequested.contains(id) || services[index].state == .stopping {
+            completeIntentionalStop(id)
+        } else {
+            removeRecord(id)
+            fail(index, "Service exited unexpectedly (status \(status)).", "Review the log for the runtime error.")
+        }
     }
-
-    private func runAndCapture(_ executable: String, _ arguments: [String]) -> String? {
-        guard fileManager.isExecutableFile(atPath: executable) else { return nil }
-        let process = Process(); let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
-        process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
-        do { try process.run(); process.waitUntilExit() } catch { return nil }
-        guard process.terminationStatus == 0 else { return nil }
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func completeIntentionalStop(_ id: ServiceID) {
+        stopRequested.remove(id); removeRecord(id); processes[id] = nil
+        if let index = services.firstIndex(where: { $0.id == id }) {
+            services[index].state = .stopped; services[index].statusText = "Stopped"; services[index].pid = nil; services[index].endpoint = nil
+        }
     }
-
-    private func hasMinimumFreeDisk() -> Bool {
-        let values = try? supportPaths().directory.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
-        return (values?.volumeAvailableCapacityForImportantUsage ?? 0) >= 5_000_000_000
-    }
-
-    private func bundledScript(named name: String) -> URL? {
-        if let url = Bundle.main.resourceURL?.appendingPathComponent(name), fileManager.fileExists(atPath: url.path) { return url }
-        let local = URL(fileURLWithPath: fileManager.currentDirectoryPath).appendingPathComponent(name)
-        return fileManager.fileExists(atPath: local.path) ? local : nil
-    }
-
-    private func supportPaths() -> (directory: URL, records: URL) {
-        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Local AI Controller")
-        return (base, base.appendingPathComponent("processes.json"))
-    }
-
-    private func allRecords() -> [ManagedProcessRecord] {
-        guard let data = try? Data(contentsOf: supportPaths().records) else { return [] }
-        return (try? JSONDecoder().decode([ManagedProcessRecord].self, from: data)) ?? []
-    }
-
+    private func endpoint(_ id: ServiceID, _ port: Int, _ host: String) -> String { id == .ollama ? "http://\(host):\(port)" : "http://\(host):\(port)/v1" }
+    private func recordsURL() -> URL { probe.supportDirectory.appendingPathComponent("processes.json") }
+    private func allRecords() -> [ManagedProcessRecord] { (try? Data(contentsOf: recordsURL())).flatMap { try? JSONDecoder().decode([ManagedProcessRecord].self, from: $0) } ?? [] }
     private func loadRecord(_ id: ServiceID) -> ManagedProcessRecord? { allRecords().first { $0.serviceID == id } }
-    private func save(_ record: ManagedProcessRecord) {
-        var records = allRecords().filter { $0.serviceID != record.serviceID }; records.append(record)
-        try? fileManager.createDirectory(at: supportPaths().directory, withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(records) { try? data.write(to: supportPaths().records, options: .atomic) }
-    }
-    private func removeRecord(_ id: ServiceID) {
-        let records = allRecords().filter { $0.serviceID != id }
-        if let data = try? JSONEncoder().encode(records) { try? data.write(to: supportPaths().records, options: .atomic) }
-    }
-    private func validate(_ record: ManagedProcessRecord) -> Bool {
-        guard kill(record.pid, 0) == 0 else { return false }
-        let command = runAndCapture("/bin/ps", ["-p", String(record.pid), "-o", "command="]) ?? ""
-        return command.contains(record.expectedCommand) || command.contains("llama-server") || (record.serviceID == .ollama && command.contains("bash"))
-    }
-    private func tail(_ path: String) -> String {
-        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return "" }
-        defer { try? handle.close() }
-        let size = (try? handle.seekToEnd()) ?? 0
-        try? handle.seek(toOffset: size > 64_000 ? size - 64_000 : 0)
-        return String(data: handle.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    }
+    private func save(_ record: ManagedProcessRecord) { var r = allRecords().filter { $0.serviceID != record.serviceID }; r.append(record); if let d = try? JSONEncoder().encode(r) { try? d.write(to: recordsURL(), options: .atomic) } }
+    private func removeRecord(_ id: ServiceID) { if let d = try? JSONEncoder().encode(allRecords().filter { $0.serviceID != id }) { try? d.write(to: recordsURL(), options: .atomic) } }
+    private func validate(_ record: ManagedProcessRecord) -> Bool { probe.isProcessRunning(record.pid) && { let c = probe.processCommand(record.pid); return c.contains(record.expectedCommand) || c.contains("llama-server") || (record.serviceID == .ollama && c.contains("bash")) }() }
+    private func tail(_ path: String) -> String { guard let h = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return "" }; defer { try? h.close() }; let s = (try? h.seekToEnd()) ?? 0; try? h.seek(toOffset: s > 64_000 ? s - 64_000 : 0); return String(data: h.readDataToEndOfFile(), encoding: .utf8) ?? "" }
 }
