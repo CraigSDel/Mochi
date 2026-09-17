@@ -8,6 +8,32 @@ Here is the updated **Complete Setup Guide**, fully integrated with our tool cap
 
 **Core Components:** `llama-server` (`llama.cpp`), Homebrew, Tailscale, VS Code, **Cline**, and **Twinny**.
 
+## Local AI Controller desktop app
+
+The native macOS controller provides both a menu-bar status item and a full
+window for starting and stopping the configured services, inspecting logs, and
+viewing read-only model recommendations. It never installs dependencies.
+Downloads occur only after choosing **Allow Downloads** in the start prompt;
+**Cached Only** enforces offline/no-pull mode. Unsupported and unverified models
+cannot be started.
+
+Build the locally signed application:
+
+```bash
+./build_app.sh
+```
+
+The result is `dist/Local AI Controller.app`. The application uses the bundled
+launcher scripts in offline/no-pull mode, stores logs and process records under
+`~/Library/Application Support/Local AI Controller/`, and preserves services
+when requested at quit. The llama.cpp chat port defaults to `11437` and can be
+changed in the app's Settings window.
+
+The Recommendations screen checks the official Ollama library and recent
+Hugging Face GGUF listings at most once per day. Only entries with complete,
+conservatively compatible metadata can produce a notification. Recommendations
+are informational: the app provides no install, download, or launch action.
+
 ---
 
 ## Architectural Division of Labor
@@ -22,8 +48,8 @@ flowchart LR
     subgraph Clients["Developer devices"]
         LocalVS["VS Code on server Mac"]
         RemoteVS["VS Code on remote device"]
-        Cline["Cline<br/>agent and chat on :11434"]
-        Twinny["Twinny<br/>chat :11434, FIM :11435, RAG :11436"]
+        Cline["Cline<br/>agent and chat on :11437"]
+        Twinny["Twinny<br/>chat :11437, FIM :11435, RAG :11436"]
 
         LocalVS --> Cline
         LocalVS --> Twinny
@@ -42,7 +68,7 @@ flowchart LR
         Scripts["Secure launcher scripts<br/>dependency checks + port validation"]
 
         subgraph LlamaPath["llama.cpp — three server processes"]
-            LChat["llama-server :11434<br/>OpenAI-compatible chat API"]
+            LChat["llama-server :11437<br/>OpenAI-compatible chat API"]
             LFIM["llama-server :11435<br/>native completion API"]
             LEmbed["llama-server :11436<br/>embedding API"]
 
@@ -84,7 +110,7 @@ flowchart LR
     Client["Computer 1 — Client<br/>VS Code + Cline/Twinny"]
     Tailnet["Tailscale<br/>encrypted private network"]
     Server["Computer 2 — Server Mac<br/>three llama-server processes"]
-    Models["Local GGUF models<br/>chat :11434 · FIM :11435 · embeddings :11436"]
+    Models["Local GGUF models<br/>chat :11437 · FIM :11435 · embeddings :11436"]
 
     Client -->|"Request to http://TAILSCALE-IP:PORT"| Tailnet
     Tailnet -->|"Encrypted connection"| Server
@@ -102,7 +128,7 @@ flowchart LR
 ```
 
 For example, if Computer 2 has Tailscale address `TAILSCALE_IP`, Computer 1
-connects to `http://TAILSCALE_IP:11434`. With the llama.cpp setup, ports
+connects to `http://TAILSCALE_IP:11437`. With the llama.cpp setup, ports
 `11435` and `11436` provide autocomplete and embeddings respectively.
 
 ### Connection and security rules
@@ -113,10 +139,10 @@ connects to `http://TAILSCALE_IP:11434`. With the llama.cpp setup, ports
 - `--bind lan` listens on every interface and exposes an unauthenticated API.
   Use it only on a trusted network and never expose these ports to the public
   internet.
-- In this llama.cpp layout, port `11434` handles chat, `11435` handles FIM
+- In this llama.cpp layout, port `11437` handles chat, `11435` handles FIM
   autocomplete, and `11436` handles embeddings.
 
-* **Cline (Port 11434):** Your **Agentic Task Engine**. Handles file creation, multi-file refactoring, terminal execution, and tool calls using the 27B model.
+* **Cline (Port 11437):** Your **Agentic Task Engine**. Handles file creation, multi-file refactoring, terminal execution, and tool calls using the 27B model.
 * **Twinny (Ports 11435 & 11436):** Your **Silent Editor Helper**. Twinny **does not support autonomous tool execution** (it cannot run terminal commands or auto-edit files on disk). Instead, it provides ultra-fast inline ghost-text code completion (FIM) and vectorizes your workspace into RAG embeddings.
 
 ---
@@ -186,7 +212,7 @@ LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/n
 # 4. Model choice selection
 echo ""
 echo "Select model service to run:"
-echo "1) Qwen3.8-27B (Chat / Reasoning - Port 11434)"
+echo "1) Qwen3.8-27B (Chat / Reasoning - Port 11437)"
 echo "2) Qwen2.5-Coder-1.5B (Autocomplete - Port 11435)"
 echo "3) Nomic Embed Text v1.5 (Workspace Embeddings - Port 11436)"
 echo -n "Choice [1, 2 or 3, default 1]: "
@@ -211,7 +237,7 @@ else
    HF_REPO="unsloth/Qwen3.8-27B-GGUF"
    HF_FILE="Qwen3.8-27B-UD-Q4_K_M.gguf"
    MODEL_ALIAS="Qwen3.8-27B"
-   PORT=11434
+   PORT=11437
    CTX_SIZE=16384
    EXTRA_FLAGS="-fa on --jinja -ctk q8_0 -ctv q8_0 --cache-reuse 256"
 fi
@@ -255,10 +281,9 @@ chmod +x start_llama_network.sh
 3. **3. Launch Network Servers:** Persistent Terminals.
 Open three terminal tabs to keep all services running simultaneously:
 
-* **Tab 1:** Run `./start_llama_network.sh`, choose `1` $\rightarrow$ **Chat Server** (`11434`)
+* **Tab 1:** Run `./start_llama_network.sh`, choose `1` $\rightarrow$ **Chat Server** (`11437`)
 * **Tab 2:** Run `./start_llama_network.sh`, choose `2` $\rightarrow$ **FIM Autocomplete** (`11435`)
 * **Tab 3:** Run `./start_llama_network.sh`, choose `3` $\rightarrow$ **Workspace Embeddings** (`11436`)
-
 
 4. **Setup Cline (VS Code): Agent Execution & Tools.**
 
@@ -267,7 +292,7 @@ Install **Cline** from VS Code Extensions, open **Settings → API Configuration
 | Setting | Local Mac | Remote device over Tailscale |
 | --- | --- | --- |
 | API Provider | `Llama` | `Llama` |
-| Base URL | `http://localhost:11434` | `http://TAILSCALE_IP:11434` |
+| Base URL | `http://localhost:11437` | `http://TAILSCALE_IP:11437` |
 | OpenAI Compatible API Key | Leave empty | Leave empty |
 | Model ID | `Qwen3.8-27B` | `Qwen3.8-27B` |
 | Reasoning Effort | `None` | `None` |
@@ -287,12 +312,12 @@ Install **Twinny** (`ext install rjmacarthy.twinny`). Open the Twinny provider s
 | Provider | `llama.cpp` |
 | Protocol | `http` |
 | Hostname | `localhost` or `TAILSCALE_IP` |
-| Port | `11434` |
+| Port | `11437` |
 | API Path | `/v1` |
 | API Key | Leave empty |
 | Model Name | `Qwen3.8-27B` |
 
-Twinny appends `/chat/completions` to the base API path. The resulting remote endpoint is `http://TAILSCALE_IP:11434/v1/chat/completions`.
+Twinny appends `/chat/completions` to the base API path. The resulting remote endpoint is `http://TAILSCALE_IP:11437/v1/chat/completions`.
 
 ### Twinny autocomplete provider
 

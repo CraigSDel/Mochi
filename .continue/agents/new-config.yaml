@@ -6,7 +6,7 @@ models:
   - name: Qwen 3.8 27B (Chat & Editing)
     provider: openai
     model: Qwen3.8-27B
-    apiBase: http://TAILSCALE_IP:11434/v1
+    apiBase: http://TAILSCALE_IP:11437/v1
     roles:
       - chat
       - edit

@@ -12,6 +12,7 @@ BIND_MODE="tailscale"
 INSTALL_MISSING=true
 TAILSCALE_UP=true
 REPLACE=false
+PULL_MISSING=true
 SERVER_PID=""
 
 usage() {
@@ -26,6 +27,7 @@ Options:
   --replace                      Gracefully stop an existing Ollama listener
   --no-install                   Do not install missing Homebrew packages
   --no-tailscale-up              Do not run 'tailscale up' when disconnected
+  --no-pull                      Fail instead of downloading missing models
   -h, --help                     Show this help
 
 Environment:
@@ -87,6 +89,7 @@ parse_args() {
       --replace) REPLACE=true; shift ;;
       --no-install) INSTALL_MISSING=false; shift ;;
       --no-tailscale-up) TAILSCALE_UP=false; shift ;;
+      --no-pull) PULL_MISSING=false; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "Unknown option: $1 (use --help)" ;;
     esac
@@ -162,6 +165,8 @@ ensure_model() {
   [ -n "$model" ] || die "$role model name is empty."
   if model_is_installed "$model"; then
     log "$role model is already installed: $model"
+  elif ! "$PULL_MISSING"; then
+    die "$role model is not installed and --no-pull forbids downloads: $model"
   else
     log "Downloading $role model: $model"
     OLLAMA_HOST="$API_URL" ollama pull "$model"

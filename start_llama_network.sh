@@ -11,6 +11,7 @@ BIND_MODE="tailscale"
 MODEL_CHOICE=""
 INSTALL_MISSING=true
 TAILSCALE_UP=true
+OFFLINE=false
 
 usage() {
   cat <<EOF
@@ -19,10 +20,12 @@ Usage: $SCRIPT_NAME [options]
 Run one llama.cpp model server. Models are downloaded by llama-server on first use.
 
 Options:
-  --model chat|autocomplete|embedding  Select a model without prompting
+  --model chat|autocomplete|embedding
+                                      Select a model without prompting
   --bind tailscale|localhost|lan      Listening interface (default: tailscale)
   --no-install                        Do not install missing Homebrew packages
   --no-tailscale-up                   Do not run 'tailscale up' when disconnected
+  --offline                           Use only models already in the llama.cpp cache
   -h, --help                          Show this help
 
 Security: --bind lan exposes an unauthenticated API to the local network.
@@ -82,6 +85,7 @@ parse_args() {
         ;;
       --no-install) INSTALL_MISSING=false; shift ;;
       --no-tailscale-up) TAILSCALE_UP=false; shift ;;
+      --offline) OFFLINE=true; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "Unknown option: $1 (use --help)" ;;
     esac
@@ -93,6 +97,19 @@ parse_args() {
 
 parse_args "$@"
 require_macos
+
+if [ -z "$MODEL_CHOICE" ]; then
+  [ -t 0 ] || die "No terminal is available; specify --model."
+  printf '%s\n' "Select model: 1) chat  2) autocomplete  3) embedding"
+  read -r -p "Choice [1]: " selection
+  case "${selection:-1}" in
+    1) MODEL_CHOICE=chat ;;
+    2) MODEL_CHOICE=autocomplete ;;
+    3) MODEL_CHOICE=embedding ;;
+    *) die "Invalid selection: $selection" ;;
+  esac
+fi
+
 install_formula llama-server llama.cpp
 install_formula lsof lsof
 
@@ -109,25 +126,13 @@ case "$BIND_MODE" in
     ;;
 esac
 
-if [ -z "$MODEL_CHOICE" ]; then
-  [ -t 0 ] || die "No terminal is available; specify --model."
-  printf '%s\n' "Select model: 1) chat  2) autocomplete  3) embedding"
-  read -r -p "Choice [1]: " selection
-  case "${selection:-1}" in
-    1) MODEL_CHOICE=chat ;;
-    2) MODEL_CHOICE=autocomplete ;;
-    3) MODEL_CHOICE=embedding ;;
-    *) die "Invalid selection: $selection" ;;
-  esac
-fi
-
 EXTRA_FLAGS=()
 case "$MODEL_CHOICE" in
   chat)
     HF_REPO="${LLAMA_CHAT_REPO:-unsloth/Qwen3.8-27B-GGUF}"
     HF_FILE="${LLAMA_CHAT_FILE:-Qwen3.8-27B-UD-Q4_K_M.gguf}"
     MODEL_ALIAS="${LLAMA_CHAT_ALIAS:-Qwen3.8-27B}"
-    PORT="${LLAMA_CHAT_PORT:-11434}"
+    PORT="${LLAMA_CHAT_PORT:-11437}"
     CTX_SIZE="${LLAMA_CHAT_CONTEXT:-16384}"
     EXTRA_FLAGS=(-fa on --jinja -ctk q8_0 -ctv q8_0 --cache-reuse 256)
     ;;
@@ -148,6 +153,8 @@ case "$MODEL_CHOICE" in
     EXTRA_FLAGS=(--embedding --pooling mean)
     ;;
 esac
+
+"$OFFLINE" && EXTRA_FLAGS+=(--offline)
 
 [[ "$PORT" =~ ^[0-9]+$ ]] && (( PORT >= 1024 && PORT <= 65535 )) || die "Invalid port: $PORT"
 [[ "$CTX_SIZE" =~ ^[0-9]+$ ]] && (( CTX_SIZE > 0 )) || die "Invalid context size: $CTX_SIZE"
