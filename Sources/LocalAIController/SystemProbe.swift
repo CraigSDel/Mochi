@@ -14,6 +14,7 @@ protocol SystemProbing: AnyObject {
     func isProcessRunning(_ pid: Int32) -> Bool
     func processCommand(_ pid: Int32) -> String
     func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool
+    func discoverModels() -> [DiscoveredModel]
 }
 
 @MainActor
@@ -64,6 +65,7 @@ final class LiveSystemProbe: SystemProbing {
         var request = URLRequest(url: url); request.timeoutInterval = 1
         do { let (_, response) = try await URLSession.shared.data(for: request); return (200..<500).contains((response as? HTTPURLResponse)?.statusCode ?? 0) } catch { return false }
     }
+    func discoverModels() -> [DiscoveredModel] { ModelInventoryScanner(fileManager: fileManager).scan() }
     private func run(_ executable: String, _ arguments: [String]) -> String? {
         guard fileManager.isExecutableFile(atPath: executable) else { return nil }
         let process = Process(); let pipe = Pipe(); process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments; process.standardOutput = pipe; process.standardError = FileHandle.nullDevice

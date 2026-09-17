@@ -8,6 +8,8 @@ BUILD_DIR="$ROOT/.build"
 APP_DIR="$ROOT/dist/Local AI Controller.app"
 CONTENTS="$APP_DIR/Contents"
 
+"$ROOT/check_code_line_lengths.sh" || exit 1
+
 mkdir -p "$BUILD_DIR/cache/clang" "$BUILD_DIR/cache/swiftpm" "$ROOT/dist"
 CLANG_MODULE_CACHE_PATH="$BUILD_DIR/cache/clang" \
 SWIFTPM_MODULECACHE_OVERRIDE="$BUILD_DIR/cache/swiftpm" \
@@ -17,6 +19,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$BUILD_DIR/release/LocalAIController" "$CONTENTS/MacOS/LocalAIController"
 cp "$ROOT/start_llama_network.sh" "$ROOT/start_ollama_network.sh" "$CONTENTS/Resources/"
+cp "$ROOT/AppResources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 cp "$ROOT/AppResources/Info.plist" "$CONTENTS/Info.plist"
 chmod +x "$CONTENTS/MacOS/LocalAIController" "$CONTENTS/Resources/"*.sh
 codesign --force --deep --sign - "$APP_DIR"

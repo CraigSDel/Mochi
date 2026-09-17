@@ -5,6 +5,7 @@ import Combine
 final class ServiceManager: ObservableObject {
     @Published private(set) var services: [ServiceSnapshot]
     @Published private(set) var configurations: [ServiceID: ServiceLaunchConfiguration]
+    @Published private(set) var installedModels: [DiscoveredModel]
     @Published var presentedFailure: ServiceFailure?
     @Published var launchAtLogin = false
 
@@ -27,7 +28,9 @@ final class ServiceManager: ObservableObject {
 
     init(probe: (any SystemProbing)? = nil, processFactory: (any ProcessMaking)? = nil, defaults: UserDefaults = .standard, fileManager: FileManager = .default, startTimer: Bool = true, stopPollAttempts: Int = 20) {
         self.fileManager = fileManager; self.defaults = defaults; self.stopPollAttempts = stopPollAttempts
-        self.probe = probe ?? LiveSystemProbe(fileManager: fileManager); self.processFactory = processFactory ?? LiveProcessFactory()
+        let resolvedProbe = probe ?? LiveSystemProbe(fileManager: fileManager)
+        self.probe = resolvedProbe; self.processFactory = processFactory ?? LiveProcessFactory()
+        self.installedModels = resolvedProbe.discoverModels()
         var loaded = Self.loadConfigurations(from: defaults)
         if loaded == nil {
             var initial = Dictionary(uniqueKeysWithValues: ServiceID.allCases.map { ($0, ServiceLaunchConfiguration.defaultValue(for: $0)) })
@@ -52,6 +55,28 @@ final class ServiceManager: ObservableObject {
     func updateConfiguration(_ configuration: ServiceLaunchConfiguration, for id: ServiceID) { guard !isConfigurationLocked(id) else { return }; configurations[id] = configuration; persistConfigurations() }
     func resetConfiguration(_ id: ServiceID) { updateConfiguration(.defaultValue(for: id), for: id) }
     func port(for id: ServiceID) -> Int? { configurations[id]?.port }
+    func refreshModelInventory() { installedModels = probe.discoverModels() }
+    func enableDownloads(for ids: [ServiceID]) {
+        for id in ids {
+            var configuration = self.configuration(for: id)
+            guard !isConfigurationLocked(id) else { continue }
+            configuration.downloadPolicy = .allowDownloads
+            configurations[id] = configuration
+        }
+        persistConfigurations()
+    }
+
+    func modelsRequiringDownload(for id: ServiceID) -> [String] {
+        let configuration = configuration(for: id)
+        guard configuration.downloadPolicy == .cachedOnly else { return [] }
+        if let llama = configuration.llama {
+            let installed = installedModels.contains { $0.runtime == .llamaCpp && $0.repository == llama.repository && $0.filename == llama.filename }
+            return installed ? [] : [llama.alias]
+        }
+        guard let ollama = configuration.ollama else { return [] }
+        let installedNames = Set(installedModels.filter { $0.runtime == .ollama }.map(\.name))
+        return [ollama.chatModel, ollama.autocompleteModel, ollama.embeddingModel].filter { !installedNames.contains($0) }
+    }
 
     func validationIssues(for id: ServiceID) -> [ConfigurationIssue] {
         let config = configuration(for: id); var issues: [ConfigurationIssue] = []

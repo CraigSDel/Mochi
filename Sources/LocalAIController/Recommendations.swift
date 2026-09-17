@@ -83,7 +83,8 @@ struct HuggingFaceProvider: RecommendationProvider {
             id: "hf:\(model.id)", name: model.id, source: sourceName, runtime: "llama.cpp",
             role: role(for: lower), quantization: quantization(from: candidate?.rfilename), sizeBytes: candidate?.size,
             context: "See model metadata", license: tags.first(where: { $0.hasPrefix("license:") })?.replacingOccurrences(of: "license:", with: "") ?? "Unknown",
-            compatibility: state, rationale: reason, updatedAt: model.lastModified
+            compatibility: state, rationale: reason, updatedAt: model.lastModified,
+            repository: candidate == nil ? nil : model.id, filename: candidate?.rfilename
         )
     }
 
@@ -122,7 +123,8 @@ struct OllamaLibraryProvider: RecommendationProvider {
                 id: "ollama:\(name)", name: name, source: sourceName, runtime: "Ollama", role: role(for: lower),
                 quantization: "Unknown", sizeBytes: nil, context: "Unknown", license: "Unknown",
                 compatibility: .unverified,
-                rationale: "Official Ollama listing found, but variant size and license require verification; no action is offered.", updatedAt: nil
+                rationale: "Official Ollama listing found, but variant size and license require verification; no action is offered.", updatedAt: nil,
+                modelName: name
             )
         }
     }

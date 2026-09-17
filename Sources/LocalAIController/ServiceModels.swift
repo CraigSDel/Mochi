@@ -1,12 +1,71 @@
 import Foundation
 
-enum ServiceID: String, Codable, CaseIterable, Identifiable, Sendable {
+enum ServiceID: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case llamaChat, autocomplete, embeddings, ollama
     var id: String { rawValue }
 }
 
+enum SidebarDestination: Hashable {
+    case overview
+    case service(ServiceID)
+    case recommendations
+
+    static let initial: SidebarDestination = .overview
+}
+
 enum ServiceState: String, Codable, Sendable {
     case unavailable, stopped, starting, running, stopping, failed, external
+
+    var displayName: String {
+        switch self {
+        case .unavailable: "Unavailable"
+        case .stopped: "Stopped"
+        case .starting: "Starting"
+        case .running: "Running"
+        case .stopping: "Stopping"
+        case .failed: "Needs attention"
+        case .external: "External"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .unavailable: "slash.circle.fill"
+        case .stopped: "circle"
+        case .starting, .stopping: "clock.fill"
+        case .running: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        case .external: "link.circle.fill"
+        }
+    }
+
+    var tone: StatusTone {
+        switch self {
+        case .running: .success
+        case .starting, .stopping: .warning
+        case .failed: .danger
+        case .external: .accent
+        case .unavailable, .stopped: .neutral
+        }
+    }
+
+    var canStart: Bool { [.stopped, .failed, .unavailable].contains(self) }
+    var canStop: Bool { [.running, .starting].contains(self) }
+}
+
+enum StatusTone: String, CaseIterable, Sendable {
+    case accent, success, warning, danger, neutral
+}
+
+extension ServiceID {
+    var symbolName: String {
+        switch self {
+        case .llamaChat: "bubble.left.and.bubble.right.fill"
+        case .autocomplete: "chevron.left.forwardslash.chevron.right"
+        case .embeddings: "point.3.connected.trianglepath.dotted"
+        case .ollama: "shippingbox.fill"
+        }
+    }
 }
 
 enum BindMode: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -128,37 +187,6 @@ struct ServiceFailure: Identifiable, Sendable {
     let timestamp: Date
     let logURL: URL
     var id: String { "\(serviceID.rawValue)-\(timestamp.timeIntervalSince1970)" }
-}
-
-enum RecommendationRole: String, Codable, CaseIterable, Sendable {
-    case chat = "Chat / reasoning"
-    case coding = "Coding / autocomplete"
-    case embedding = "Embeddings"
-}
-
-enum Compatibility: String, Codable, Sendable {
-    case compatible = "Compatible"
-    case unverified = "Unverified"
-    case incompatible = "Incompatible"
-}
-
-struct ModelRecommendation: Identifiable, Codable, Hashable, Sendable {
-    let id: String
-    let name: String
-    let source: String
-    let runtime: String
-    let role: RecommendationRole
-    let quantization: String
-    let sizeBytes: Int64?
-    let context: String
-    let license: String
-    let compatibility: Compatibility
-    let rationale: String
-    let updatedAt: Date?
-    var sizeText: String {
-        guard let sizeBytes else { return "Unknown" }
-        return ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file)
-    }
 }
 
 enum ControllerPolicy {

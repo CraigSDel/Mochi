@@ -96,10 +96,18 @@ The default ports are:
 | llama.cpp chat | `11437` |
 
 Select a service to configure its port, network binding, download policy, and
-model identifiers directly above the Start button. Expand **Advanced** to tune
-context size, GPU layers, or Ollama runtime settings. Configurations are saved
+model selection directly above the Start button. Model menus combine locally
+downloaded Ollama manifests and cached Hugging Face GGUF files with launchable
+catalog recommendations; local, role-matched choices appear first. Use
+**Rescan** after installing a model outside the app. Expand **Advanced** to tune
+context size, GPU layers, Ollama runtime settings, or enter a custom model.
+Configurations are saved
 per service between launches, and **Reset to Defaults** restores the values
 listed by the bundled launcher scripts.
+
+Selecting a catalog model marks it as requiring a download. If the service is
+set to **Cached only**, Start asks before switching that service to **Allow
+downloads**; canceling leaves the configuration unchanged.
 
 The available bind modes are **Tailscale**, **Localhost**, and **Local network**.
 Local-network mode exposes an unauthenticated API and therefore requires an
