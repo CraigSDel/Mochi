@@ -74,7 +74,7 @@ The Services sidebar shows each runtime and its current state:
 
 - **Start** launches one service with the configuration shown on its screen.
 - **Stop** gracefully stops a service launched by the controller.
-- **Start All** validates and uses the saved configuration for all four services.
+- **Start All** validates and uses the saved configuration for the three llama.cpp services; Ollama is started separately.
 - **Stop All** stops all verified controller-managed services.
 - **Copy Logs**, **Clear**, and **Reveal** manage each service's local log.
 
@@ -115,6 +115,13 @@ explicit confirmation on every launch. Custom model identifiers also require
 confirmation because their memory requirements have not been verified. Fields
 are locked while their service is active; stop the service before editing its
 next-launch configuration.
+
+The Overview's **Test Tailscale** action selects an online peer and reports
+whether connectivity is direct, relayed, or unreachable. Tailscale-bound
+service launches run the same test first. Relayed or failed tests produce a
+warning but do not prevent an acknowledged launch; a failed ping can indicate
+a firewall, tailnet policy, or peer availability problem rather than proving a
+specific cause.
 
 The separate Settings window provides the optional **Launch at Login** setting,
 disabled by default.

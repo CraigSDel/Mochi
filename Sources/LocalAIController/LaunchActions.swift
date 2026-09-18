@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 
+@MainActor
 private func confirmWarnings(_ warnings: [LaunchWarning]) -> Bool {
     guard !warnings.isEmpty else { return true }
     let alert = NSAlert()
@@ -34,17 +35,24 @@ private func confirmRequiredDownloads(for ids: [ServiceID], manager: ServiceMana
 @MainActor
 func attemptStart(_ id: ServiceID, manager: ServiceManager) {
     let issues = manager.validationIssues(for: id); guard issues.isEmpty else { showConfigurationErrors(issues); return }
-    let warnings = manager.launchWarnings(for: [id]); guard confirmWarnings(warnings) else { return }
-    guard confirmRequiredDownloads(for: [id], manager: manager) else { return }
-    Task { await manager.start(id, warningsAcknowledged: !warnings.isEmpty) }
+    Task {
+        var warnings = manager.launchWarnings(for: [id])
+        if let warning = await manager.tailscaleLaunchWarning(for: [id]) { warnings.append(warning) }
+        guard confirmWarnings(warnings) else { return }
+        guard confirmRequiredDownloads(for: [id], manager: manager) else { return }
+        await manager.start(id, warningsAcknowledged: !warnings.isEmpty)
+    }
 }
 
 @MainActor
 func attemptStartAll(_ manager: ServiceManager) {
     let issues = manager.validationIssuesForStartAll(); guard issues.isEmpty else { showConfigurationErrors(issues); return }
-    let ids: [ServiceID] = [.ollama, .llamaChat, .autocomplete, .embeddings]
-    let warnings = manager.launchWarnings(for: ids); guard confirmWarnings(warnings) else { return }
-    guard confirmRequiredDownloads(for: ids, manager: manager) else { return }
-    Task { await manager.startAll(warningsAcknowledged: !warnings.isEmpty) }
+    let ids = ServiceManager.startAllServiceIDs
+    Task {
+        var warnings = manager.launchWarnings(for: ids)
+        if let warning = await manager.tailscaleLaunchWarning(for: ids) { warnings.append(warning) }
+        guard confirmWarnings(warnings) else { return }
+        guard confirmRequiredDownloads(for: ids, manager: manager) else { return }
+        await manager.startAll(warningsAcknowledged: !warnings.isEmpty)
+    }
 }
-

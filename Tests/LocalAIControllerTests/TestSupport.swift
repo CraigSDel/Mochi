@@ -19,6 +19,8 @@ final class FakeProbe: SystemProbing {
     var lastHealthPort: Int?
     var lastHealthHost: String?
     var discoveredModels: [DiscoveredModel] = []
+    var diagnostic = TailscaleDiagnostic(status: .direct, peer: "test-peer", detail: "direct", checkedAt: Date())
+    var diagnosticCallCount = 0
     init(directory: URL) { supportDirectory = directory }
     func commandPath(_ command: String) -> String? { commands[command] }
     func isPortListening(_ port: Int) -> Bool { portListeningCheck?(port) ?? occupiedPorts.contains(port) }
@@ -29,6 +31,7 @@ final class FakeProbe: SystemProbing {
     func isProcessRunning(_ pid: Int32) -> Bool { processRunningCheck?(pid) ?? processRunning }
     func processCommand(_ pid: Int32) -> String { processCommandValue }
     func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool { lastHealthPort = port; lastHealthHost = host; return healthy }
+    func tailscaleDiagnostic() async -> TailscaleDiagnostic { diagnosticCallCount += 1; return diagnostic }
     func discoverModels() -> [DiscoveredModel] { discoveredModels }
 }
 

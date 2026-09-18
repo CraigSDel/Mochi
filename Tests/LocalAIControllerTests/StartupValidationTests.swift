@@ -138,6 +138,36 @@ final class StartupValidationTests: XCTestCase {
         XCTAssertTrue(manager.validationIssuesForStartAll().contains { $0.field == "ports" })
     }
 
+    func testStartAllIncludesOnlyLlamaServices() {
+        XCTAssertEqual(ServiceManager.startAllServiceIDs, [.llamaChat, .autocomplete, .embeddings])
+        XCTAssertFalse(ServiceManager.startAllServiceIDs.contains(.ollama))
+    }
+
+    func testStartAllValidationIgnoresInvalidOllamaConfiguration() {
+        let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        var ollama = manager.configuration(for: .ollama)
+        ollama.port = 80
+        ollama.ollama?.chatModel = ""
+        manager.updateConfiguration(ollama, for: .ollama)
+
+        XCTAssertFalse(manager.validationIssues(for: .ollama).isEmpty)
+        XCTAssertTrue(manager.validationIssuesForStartAll().isEmpty)
+    }
+
+    func testStartAllPortCollisionsIgnoreOllama() {
+        let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        var ollama = manager.configuration(for: .ollama)
+        ollama.port = manager.configuration(for: .llamaChat).port
+        manager.updateConfiguration(ollama, for: .ollama)
+
+        XCTAssertFalse(manager.validationIssuesForStartAll().contains { $0.field == "ports" })
+
+        var embeddings = manager.configuration(for: .embeddings)
+        embeddings.port = manager.configuration(for: .autocomplete).port
+        manager.updateConfiguration(embeddings, for: .embeddings)
+        XCTAssertTrue(manager.validationIssuesForStartAll().contains { $0.field == "ports" })
+    }
+
     func testLanAndCustomModelsProduceConsolidatableWarnings() {
         let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
         var config = manager.configuration(for: .llamaChat); config.bindMode = .lan; config.llama?.repository = "custom/repo"

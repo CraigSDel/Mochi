@@ -110,6 +110,8 @@ struct OverviewView: View {
                     OverviewMetric(title: "Available", value: "\(manager.services.filter(\.definition.supported).count)", symbol: "shippingbox.fill", tone: .neutral)
                 }
 
+                tailscaleDiagnosticCard
+
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeading("Services", subtitle: "Start, stop, and inspect each local runtime.", symbol: "server.rack")
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 14)], spacing: 14) {
@@ -140,6 +142,26 @@ struct OverviewView: View {
             .padding(28)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var tailscaleDiagnosticCard: some View {
+        let diagnostic = manager.latestTailscaleDiagnostic
+        return HStack(spacing: 14) {
+            Image(systemName: diagnostic?.symbolName ?? "network")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(AppTheme.color(for: diagnostic?.tone ?? .neutral))
+                .frame(width: 42, height: 42)
+                .background(AppTheme.color(for: diagnostic?.tone ?? .neutral).opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(diagnostic?.title ?? "Tailscale connectivity").font(.headline)
+                Text(diagnostic.map { [$0.peer.map { "Peer: \($0)." }, $0.guidance].compactMap { $0 }.joined(separator: " ") } ?? "Test an online peer to detect direct, relayed, or possibly blocked connectivity.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(manager.isTestingTailscale ? "Testing…" : "Test Tailscale") { Task { await manager.testTailscale() } }
+                .disabled(manager.isTestingTailscale)
+        }
+        .appCard()
     }
 }
 
@@ -209,4 +231,3 @@ private struct OverviewServiceCard: View {
         .appCard()
     }
 }
-

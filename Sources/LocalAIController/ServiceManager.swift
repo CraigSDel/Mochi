@@ -3,9 +3,13 @@ import Combine
 
 @MainActor
 final class ServiceManager: ObservableObject {
+    static let startAllServiceIDs: [ServiceID] = [.llamaChat, .autocomplete, .embeddings]
+
     @Published private(set) var services: [ServiceSnapshot]
     @Published private(set) var configurations: [ServiceID: ServiceLaunchConfiguration]
     @Published private(set) var installedModels: [DiscoveredModel]
+    @Published private(set) var latestTailscaleDiagnostic: TailscaleDiagnostic?
+    @Published private(set) var isTestingTailscale = false
     @Published var presentedFailure: ServiceFailure?
     @Published var launchAtLogin = false
 
@@ -56,6 +60,21 @@ final class ServiceManager: ObservableObject {
     func resetConfiguration(_ id: ServiceID) { updateConfiguration(.defaultValue(for: id), for: id) }
     func port(for id: ServiceID) -> Int? { configurations[id]?.port }
     func refreshModelInventory() { installedModels = probe.discoverModels() }
+    @discardableResult
+    func testTailscale() async -> TailscaleDiagnostic {
+        isTestingTailscale = true
+        latestTailscaleDiagnostic = .init(status: .checking, peer: nil, detail: "Testing an online peer…", checkedAt: Date())
+        let result = await probe.tailscaleDiagnostic()
+        latestTailscaleDiagnostic = result
+        isTestingTailscale = false
+        return result
+    }
+
+    func tailscaleLaunchWarning(for ids: [ServiceID]) async -> LaunchWarning? {
+        guard let serviceID = ids.first(where: { configuration(for: $0).bindMode == .tailscale }) else { return nil }
+        let diagnostic = await testTailscale()
+        return diagnostic.launchWarning.map { .init(serviceID: serviceID, message: $0) }
+    }
     func enableDownloads(for ids: [ServiceID]) {
         for id in ids {
             var configuration = self.configuration(for: id)
@@ -95,8 +114,9 @@ final class ServiceManager: ObservableObject {
     }
 
     func validationIssuesForStartAll() -> [ConfigurationIssue] {
-        var issues: [ConfigurationIssue] = ServiceID.allCases.flatMap { id in validationIssues(for: id).map { ConfigurationIssue(field: "\(id.rawValue).\($0.field)", message: "\(serviceName(id)): \($0.message)") } }
-        for (port, ids) in Dictionary(grouping: ServiceID.allCases, by: { configuration(for: $0).port }) where ids.count > 1 { issues.append(.init(field: "ports", message: "Port \(port) is assigned to \(ids.map(serviceName).joined(separator: ", ")).")) }
+        let ids = Self.startAllServiceIDs
+        var issues: [ConfigurationIssue] = ids.flatMap { id in validationIssues(for: id).map { ConfigurationIssue(field: "\(id.rawValue).\($0.field)", message: "\(serviceName(id)): \($0.message)") } }
+        for (port, conflictingIDs) in Dictionary(grouping: ids, by: { configuration(for: $0).port }) where conflictingIDs.count > 1 { issues.append(.init(field: "ports", message: "Port \(port) is assigned to \(conflictingIDs.map(serviceName).joined(separator: ", ")).")) }
         return issues
     }
 
@@ -135,7 +155,7 @@ final class ServiceManager: ObservableObject {
     }
 
     func startAll(warningsAcknowledged: Bool = false) async {
-        let ids: [ServiceID] = [.ollama, .llamaChat, .autocomplete, .embeddings]
+        let ids = Self.startAllServiceIDs
         guard validationIssuesForStartAll().isEmpty, warningsAcknowledged || launchWarnings(for: ids).isEmpty else { return }
         for id in ids { await start(id, warningsAcknowledged: warningsAcknowledged) }
     }

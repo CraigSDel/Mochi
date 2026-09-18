@@ -14,6 +14,7 @@ protocol SystemProbing: AnyObject {
     func isProcessRunning(_ pid: Int32) -> Bool
     func processCommand(_ pid: Int32) -> String
     func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool
+    func tailscaleDiagnostic() async -> TailscaleDiagnostic
     func discoverModels() -> [DiscoveredModel]
 }
 
