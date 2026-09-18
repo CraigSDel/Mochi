@@ -121,6 +121,21 @@ final class StartupValidationTests: XCTestCase {
         XCTAssertEqual(ollamaEnvironment["OLLAMA_MAX_LOADED_MODELS"], "2")
     }
 
+    func testEffectiveBindModeOnlyOverridesTailscaleWithLocalhost() {
+        XCTAssertEqual(ServiceManager.effectiveBindMode(configured: .tailscale, override: .localhost), .localhost)
+        XCTAssertEqual(ServiceManager.effectiveBindMode(configured: .tailscale, override: .lan), .lan)
+        XCTAssertEqual(ServiceManager.effectiveBindMode(configured: .localhost, override: .localhost), .localhost)
+        XCTAssertEqual(ServiceManager.effectiveBindMode(configured: .localhost, override: .lan), .localhost)
+        XCTAssertEqual(ServiceManager.effectiveBindMode(configured: .lan, override: .localhost), .lan)
+        XCTAssertEqual(ServiceManager.effectiveBindMode(configured: .tailscale, override: nil), .tailscale)
+    }
+
+    func testEndpointIncludesHostPortAndRuntimePath() {
+        XCTAssertEqual(ServiceManager.endpoint(.llamaChat, 11437, "100.64.0.1"), "http://100.64.0.1:11437/v1")
+        XCTAssertEqual(ServiceManager.endpoint(.autocomplete, 11435, "127.0.0.1"), "http://127.0.0.1:11435/v1")
+        XCTAssertEqual(ServiceManager.endpoint(.ollama, 11434, "192.168.1.10"), "http://192.168.1.10:11434")
+    }
+
     func testLegacyManagedProcessRecordDecodesWithDefaultableBindMode() throws {
         let json = #"[{"serviceID":"llamaChat","pid":123,"port":11437,"expectedCommand":"start_llama_network.sh","startedAt":0,"logPath":"/tmp/test.log"}]"#
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .secondsSince1970
@@ -201,6 +216,28 @@ final class StartupValidationTests: XCTestCase {
         await manager.start(.llamaChat)
         XCTAssertEqual(probe.lastHealthHost, "127.0.0.1")
         XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.endpoint, "http://127.0.0.1:11437/v1")
+        await manager.stop(.llamaChat)
+    }
+
+    func testOneTimeLocalFallbackPreservesConfigurationAndRecordAndLogsEndpointOnce() async throws {
+        let (directory, probe, defaults) = context(); probe.commands["tailscale"] = nil; probe.tailnetIP = nil; probe.healthy = true
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let script = directory.appendingPathComponent("start_llama_network.sh")
+        try "#!/bin/bash\ntrap 'exit 0' TERM\nwhile true; do sleep 0.1; done\n".write(to: script, atomically: true, encoding: .utf8)
+        probe.script = script; probe.processRunningCheck = { kill($0, 0) == 0 }
+        let factory = FakeProcessFactory(); probe.portListeningCheck = { _ in factory.lastProcess?.isRunning == true }
+        let manager = ServiceManager(probe: probe, processFactory: factory, defaults: defaults, startTimer: false)
+
+        await manager.start(.llamaChat, warningsAcknowledged: true, bindModeOverride: .localhost)
+
+        XCTAssertEqual(manager.configuration(for: .llamaChat).bindMode, .tailscale)
+        XCTAssertEqual(manager.services.first { $0.id == .llamaChat }?.endpoint, "http://127.0.0.1:11437/v1")
+        XCTAssertEqual(probe.lastHealthHost, "127.0.0.1")
+        let data = try Data(contentsOf: directory.appendingPathComponent("processes.json"))
+        XCTAssertEqual(try JSONDecoder().decode([ManagedProcessRecord].self, from: data).first?.bindMode, .localhost)
+        await manager.refreshStatuses(); await manager.refreshStatuses()
+        let log = manager.services.first { $0.id == .llamaChat }?.logText ?? ""
+        XCTAssertEqual(log.components(separatedBy: "Model available at http://127.0.0.1:11437/v1").count - 1, 1)
         await manager.stop(.llamaChat)
     }
 

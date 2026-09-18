@@ -1,14 +1,29 @@
 import SwiftUI
 import AppKit
 
+enum LaunchWarningDecision: Equatable {
+    case configured, localhost, lan, cancel
+    var shouldStart: Bool { self != .cancel }
+    var bindModeOverride: BindMode? { switch self { case .localhost: .localhost; case .lan: .lan; case .configured, .cancel: nil } }
+}
+
 @MainActor
-private func confirmWarnings(_ warnings: [LaunchWarning]) -> Bool {
-    guard !warnings.isEmpty else { return true }
+private func confirmWarnings(_ warnings: [LaunchWarning], offersLocalFallback: Bool, offersWiFiFallback: Bool) -> LaunchWarningDecision {
+    guard !warnings.isEmpty else { return .configured }
     let alert = NSAlert()
     alert.alertStyle = .warning; alert.messageText = "Review launch warnings"
-    alert.informativeText = warnings.map { "• \($0.message)" }.joined(separator: "\n")
-    alert.addButton(withTitle: "Acknowledge and Start"); alert.addButton(withTitle: "Cancel")
-    return alert.runModal() == .alertFirstButtonReturn
+    let wifiNotice = offersWiFiFallback ? "\n\nStart on Wi-Fi exposes these unauthenticated APIs to devices on the local network." : ""
+    alert.informativeText = warnings.map { "• \($0.message)" }.joined(separator: "\n") + wifiNotice
+    alert.addButton(withTitle: offersLocalFallback ? "Start Anyway" : "Acknowledge and Start")
+    if offersLocalFallback { alert.addButton(withTitle: "Start Locally") }
+    if offersWiFiFallback { alert.addButton(withTitle: "Start on Wi-Fi") }
+    alert.addButton(withTitle: "Cancel")
+    switch alert.runModal() {
+    case .alertFirstButtonReturn: return .configured
+    case .alertSecondButtonReturn where offersLocalFallback: return .localhost
+    case .alertThirdButtonReturn where offersWiFiFallback: return .lan
+    default: return .cancel
+    }
 }
 
 @MainActor
@@ -37,10 +52,13 @@ func attemptStart(_ id: ServiceID, manager: ServiceManager) {
     let issues = manager.validationIssues(for: id); guard issues.isEmpty else { showConfigurationErrors(issues); return }
     Task {
         var warnings = manager.launchWarnings(for: [id])
-        if let warning = await manager.tailscaleLaunchWarning(for: [id]) { warnings.append(warning) }
-        guard confirmWarnings(warnings) else { return }
+        let networkWarning = await manager.tailscaleLaunchWarning(for: [id])
+        if let networkWarning { warnings.append(networkWarning) }
+        let offersWiFi = networkWarning != nil && manager.wifiIP() != nil
+        let decision = confirmWarnings(warnings, offersLocalFallback: networkWarning != nil, offersWiFiFallback: offersWiFi)
+        guard decision.shouldStart else { return }
         guard confirmRequiredDownloads(for: [id], manager: manager) else { return }
-        await manager.start(id, warningsAcknowledged: !warnings.isEmpty)
+        await manager.start(id, warningsAcknowledged: !warnings.isEmpty, bindModeOverride: decision.bindModeOverride)
     }
 }
 
@@ -50,9 +68,12 @@ func attemptStartAll(_ manager: ServiceManager) {
     let ids = ServiceManager.startAllServiceIDs
     Task {
         var warnings = manager.launchWarnings(for: ids)
-        if let warning = await manager.tailscaleLaunchWarning(for: ids) { warnings.append(warning) }
-        guard confirmWarnings(warnings) else { return }
+        let networkWarning = await manager.tailscaleLaunchWarning(for: ids)
+        if let networkWarning { warnings.append(networkWarning) }
+        let offersWiFi = networkWarning != nil && manager.wifiIP() != nil
+        let decision = confirmWarnings(warnings, offersLocalFallback: networkWarning != nil, offersWiFiFallback: offersWiFi)
+        guard decision.shouldStart else { return }
         guard confirmRequiredDownloads(for: ids, manager: manager) else { return }
-        await manager.startAll(warningsAcknowledged: !warnings.isEmpty)
+        await manager.startAll(warningsAcknowledged: !warnings.isEmpty, bindModeOverride: decision.bindModeOverride)
     }
 }

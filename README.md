@@ -123,6 +123,16 @@ warning but do not prevent an acknowledged launch; a failed ping can indicate
 a firewall, tailnet policy, or peer availability problem rather than proving a
 specific cause.
 
+When that warning appears, **Start Locally** launches Tailscale-configured
+services on `127.0.0.1` for that run without changing their saved configuration.
+A **Start on Wi-Fi** option is also shown when Wi-Fi has an active IPv4 address;
+it listens on all local interfaces and displays the Wi-Fi address, so other
+devices on that network can connect. This mode exposes the unauthenticated APIs
+to the local network.
+A Tailscale-bound service listens only on its `100.x.x.x` address and is not
+also available through localhost. Running service cards, service details, and
+logs show the complete endpoint where each model is available.
+
 The separate Settings window provides the optional **Launch at Login** setting,
 disabled by default.
 

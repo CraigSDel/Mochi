@@ -9,6 +9,7 @@ final class FakeProbe: SystemProbing {
     var occupiedPorts: Set<Int> = []
     var portListeningCheck: ((Int) -> Bool)?
     var tailnetIP: String? = "100.64.0.1"
+    var wifiIPv4: String? = "192.168.1.10"
     var lanIP: String? = "192.168.1.10"
     var diskBytes: Int64 = 100_000_000_000
     var script: URL?
@@ -25,6 +26,7 @@ final class FakeProbe: SystemProbing {
     func commandPath(_ command: String) -> String? { commands[command] }
     func isPortListening(_ port: Int) -> Bool { portListeningCheck?(port) ?? occupiedPorts.contains(port) }
     func tailscaleIP() -> String? { tailnetIP }
+    func wifiIP() -> String? { wifiIPv4 }
     func localNetworkIP() -> String? { lanIP }
     func availableDiskBytes() -> Int64 { diskBytes }
     func scriptURL(named name: String) -> URL? { script }

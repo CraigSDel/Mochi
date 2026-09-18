@@ -59,6 +59,7 @@ final class ServiceManager: ObservableObject {
     func updateConfiguration(_ configuration: ServiceLaunchConfiguration, for id: ServiceID) { guard !isConfigurationLocked(id) else { return }; configurations[id] = configuration; persistConfigurations() }
     func resetConfiguration(_ id: ServiceID) { updateConfiguration(.defaultValue(for: id), for: id) }
     func port(for id: ServiceID) -> Int? { configurations[id]?.port }
+    func wifiIP() -> String? { probe.wifiIP() }
     func refreshModelInventory() { installedModels = probe.discoverModels() }
     @discardableResult
     func testTailscale() async -> TailscaleDiagnostic {
@@ -154,19 +155,28 @@ final class ServiceManager: ObservableObject {
         return environment
     }
 
-    func startAll(warningsAcknowledged: Bool = false) async {
+    static func effectiveBindMode(configured: BindMode, override: BindMode?) -> BindMode {
+        guard configured == .tailscale, let override, override == .localhost || override == .lan else { return configured }
+        return override
+    }
+
+    func startAll(warningsAcknowledged: Bool = false, bindModeOverride: BindMode? = nil) async {
         let ids = Self.startAllServiceIDs
         guard validationIssuesForStartAll().isEmpty, warningsAcknowledged || launchWarnings(for: ids).isEmpty else { return }
-        for id in ids { await start(id, warningsAcknowledged: warningsAcknowledged) }
+        for id in ids { await start(id, warningsAcknowledged: warningsAcknowledged, bindModeOverride: bindModeOverride) }
     }
     func stopAll() async { for id in [ServiceID.llamaChat, .autocomplete, .embeddings, .ollama] { await stop(id) } }
 
-    func start(_ id: ServiceID, warningsAcknowledged: Bool = false) async {
+    func start(_ id: ServiceID, warningsAcknowledged: Bool = false, bindModeOverride: BindMode? = nil) async {
         guard let index = services.firstIndex(where: { $0.id == id }) else { return }
-        let definition = services[index].definition, config = configuration(for: id)
+        let definition = services[index].definition, savedConfig = configuration(for: id)
+        var config = savedConfig
+        config.bindMode = Self.effectiveBindMode(configured: savedConfig.bindMode, override: bindModeOverride)
         guard validationIssues(for: id).isEmpty else { fail(index, "Launch configuration is invalid.", "Correct the highlighted fields and retry."); return }
         guard warningsAcknowledged || launchWarnings(for: [id]).isEmpty else { fail(index, "Launch confirmation is required.", "Review and acknowledge the network or custom-model warning."); return }
-        ensureLog(id); append(id, "========== START ATTEMPT =========="); append(id, "Mode: \(config.downloadPolicy.title); bind: \(config.bindMode.title); port: \(config.port)")
+        ensureLog(id); append(id, "========== START ATTEMPT ==========")
+        let overrideNote = config.bindMode != savedConfig.bindMode ? " (one-time override from \(savedConfig.bindMode.title))" : ""
+        append(id, "Mode: \(config.downloadPolicy.title); bind: \(config.bindMode.title)\(overrideNote); port: \(config.port)")
         services[index].state = .starting; services[index].statusText = "Running preflight checks…"; presentedFailure = nil
         let occupied = probe.isPortListening(config.port); append(id, "Port \(config.port): \(occupied ? "occupied" : "available")")
         guard !occupied else { fail(index, "Port \(config.port) is already occupied.", "Stop the external service or choose another port."); return }
@@ -201,7 +211,7 @@ final class ServiceManager: ObservableObject {
         do {
             try process.run(); processes[id] = process; append(id, "Process started with PID \(process.processIdentifier)")
             save(.init(serviceID: id, pid: process.processIdentifier, port: config.port, expectedCommand: scriptName, startedAt: Date(), logPath: logURL(id).path, bindMode: config.bindMode))
-            services[index].pid = process.processIdentifier; services[index].endpoint = endpoint(id, config.port, hosts.display)
+            services[index].pid = process.processIdentifier; services[index].endpoint = Self.endpoint(id, config.port, hosts.display)
             try? await Task.sleep(for: .seconds(1)); await refreshStatuses()
         } catch { outputHandles[id] = nil; try? handle.close(); fail(index, "Failed to launch the service.", error.localizedDescription) }
     }
@@ -218,14 +228,17 @@ final class ServiceManager: ObservableObject {
         for index in services.indices {
             let id = services[index].id; services[index].logText = tail(logURL(id).path)
             if let record = loadRecord(id), validate(record) {
+                let wasRunning = services[index].state == .running
                 let hosts = resolvedHosts(for: record.bindMode ?? .tailscale) ?? ("127.0.0.1", "127.0.0.1")
                 let listening = probe.isPortListening(record.port), healthy = listening ? await probe.healthResponding(id, port: record.port, host: hosts.health) : false
-                services[index].state = healthy ? .running : .starting; services[index].statusText = healthy ? "Running and healthy" : "Process active; waiting for health"; services[index].pid = record.pid; services[index].endpoint = endpoint(id, record.port, hosts.display)
+                let availableEndpoint = Self.endpoint(id, record.port, hosts.display)
+                services[index].state = healthy ? .running : .starting; services[index].statusText = healthy ? "Running and healthy at \(availableEndpoint)" : "Process active; waiting for health"; services[index].pid = record.pid; services[index].endpoint = availableEndpoint
+                if healthy && !wasRunning { append(id, "Model available at \(availableEndpoint)") }
             } else {
                 let config = configuration(for: id)
                 if probe.isPortListening(config.port) {
                     let hosts = resolvedHosts(for: config.bindMode) ?? ("127.0.0.1", "127.0.0.1")
-                    removeRecord(id); services[index].state = .external; services[index].statusText = "External service on port \(config.port)"; services[index].pid = nil; services[index].endpoint = endpoint(id, config.port, hosts.display)
+                    removeRecord(id); services[index].state = .external; services[index].statusText = "External service on port \(config.port)"; services[index].pid = nil; services[index].endpoint = Self.endpoint(id, config.port, hosts.display)
                 } else if services[index].state != .failed { removeRecord(id); services[index].state = .stopped; services[index].statusText = "Stopped"; services[index].pid = nil; services[index].endpoint = nil }
             }
         }
@@ -233,7 +246,7 @@ final class ServiceManager: ObservableObject {
 
     func clearLog(_ id: ServiceID) { if let h = outputHandles[id] { try? h.truncate(atOffset: 0); try? h.seek(toOffset: 0) } else { try? Data().write(to: logURL(id)) }; if let i = services.firstIndex(where: { $0.id == id }) { services[i].logText = "" } }
     func logURL(_ id: ServiceID) -> URL { probe.supportDirectory.appendingPathComponent("\(id.rawValue).log") }
-    private func resolvedHosts(for bind: BindMode) -> (display: String, health: String)? { switch bind { case .tailscale: guard probe.commandPath("tailscale") != nil, let ip = probe.tailscaleIP() else { return nil }; return (ip, ip); case .localhost: return ("127.0.0.1", "127.0.0.1"); case .lan: guard let ip = probe.localNetworkIP() else { return nil }; return (ip, "127.0.0.1") } }
+    private func resolvedHosts(for bind: BindMode) -> (display: String, health: String)? { switch bind { case .tailscale: guard probe.commandPath("tailscale") != nil, let ip = probe.tailscaleIP() else { return nil }; return (ip, ip); case .localhost: return ("127.0.0.1", "127.0.0.1"); case .lan: guard let ip = probe.wifiIP() ?? probe.localNetworkIP() else { return nil }; return (ip, "127.0.0.1") } }
     private func serviceName(_ id: ServiceID) -> String { definitions.first(where: { $0.id == id })?.name ?? id.rawValue }
     private static func loadConfigurations(from defaults: UserDefaults) -> [ServiceID: ServiceLaunchConfiguration]? { guard let data = defaults.data(forKey: configurationKey), let stored = try? JSONDecoder().decode([String: ServiceLaunchConfiguration].self, from: data) else { return nil }; return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in ServiceID(rawValue: key).map { ($0, value) } }) }
     private func persistConfigurations() { let stored = Dictionary(uniqueKeysWithValues: configurations.map { ($0.key.rawValue, $0.value) }); if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.configurationKey) } }
@@ -242,7 +255,7 @@ final class ServiceManager: ObservableObject {
     private func fail(_ index: Int, _ message: String, _ guidance: String) { let id = services[index].id; append(id, "ERROR: \(message) Guidance: \(guidance)"); services[index].state = .failed; services[index].statusText = message; services[index].pid = nil; presentedFailure = .init(serviceID: id, serviceName: services[index].definition.name, message: message, guidance: guidance, timestamp: Date(), logURL: logURL(id)) }
     private func handleTermination(_ id: ServiceID, status: Int32, reason: Process.TerminationReason) { guard let index = services.firstIndex(where: { $0.id == id }) else { return }; append(id, "Process terminated; status=\(status), reason=\(reason.rawValue)"); if let h = outputHandles.removeValue(forKey: id) { try? h.close() }; processes[id] = nil; if stopRequested.contains(id) || services[index].state == .stopping { completeIntentionalStop(id) } else { removeRecord(id); fail(index, "Service exited unexpectedly (status \(status)).", "Review the log for the runtime error.") } }
     private func completeIntentionalStop(_ id: ServiceID) { stopRequested.remove(id); removeRecord(id); processes[id] = nil; if let index = services.firstIndex(where: { $0.id == id }) { services[index].state = .stopped; services[index].statusText = "Stopped"; services[index].pid = nil; services[index].endpoint = nil } }
-    private func endpoint(_ id: ServiceID, _ port: Int, _ host: String) -> String { id == .ollama ? "http://\(host):\(port)" : "http://\(host):\(port)/v1" }
+    static func endpoint(_ id: ServiceID, _ port: Int, _ host: String) -> String { id == .ollama ? "http://\(host):\(port)" : "http://\(host):\(port)/v1" }
     private func recordsURL() -> URL { probe.supportDirectory.appendingPathComponent("processes.json") }
     private func allRecords() -> [ManagedProcessRecord] { (try? Data(contentsOf: recordsURL())).flatMap { try? JSONDecoder().decode([ManagedProcessRecord].self, from: $0) } ?? [] }
     private func loadRecord(_ id: ServiceID) -> ManagedProcessRecord? { allRecords().first { $0.serviceID == id } }

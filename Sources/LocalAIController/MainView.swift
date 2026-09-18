@@ -213,7 +213,15 @@ private struct OverviewServiceCard: View {
             HStack {
                 Label(service.definition.runtime, systemImage: "gearshape.2")
                 Spacer()
-                Text(service.endpoint ?? "Port \(manager.configuration(for: service.id).port)").lineLimit(1)
+                if let endpoint = service.endpoint {
+                    Text(endpoint).lineLimit(1).textSelection(.enabled)
+                    Button {
+                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(endpoint, forType: .string)
+                    } label: { Image(systemName: "doc.on.doc") }
+                        .buttonStyle(.plain).help("Copy endpoint")
+                } else {
+                    Text("Port \(manager.configuration(for: service.id).port)").lineLimit(1)
+                }
             }
             .font(.caption).foregroundStyle(.secondary)
             Divider()

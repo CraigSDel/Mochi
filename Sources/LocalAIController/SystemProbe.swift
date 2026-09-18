@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import SystemConfiguration
 
 @MainActor
 protocol SystemProbing: AnyObject {
@@ -8,6 +9,7 @@ protocol SystemProbing: AnyObject {
     func commandPath(_ command: String) -> String?
     func isPortListening(_ port: Int) -> Bool
     func tailscaleIP() -> String?
+    func wifiIP() -> String?
     func localNetworkIP() -> String?
     func availableDiskBytes() -> Int64
     func scriptURL(named name: String) -> URL?
@@ -34,13 +36,31 @@ final class LiveSystemProbe: SystemProbing {
     }
     func isPortListening(_ port: Int) -> Bool { !(run("/usr/sbin/lsof", ["-nP", "-tiTCP:\(port)", "-sTCP:LISTEN"]) ?? "").isEmpty }
     func tailscaleIP() -> String? { guard let executable = commandPath("tailscale") else { return nil }; return run(executable, ["ip", "-4"])?.split(separator: "\n").first.map(String.init) }
+    func wifiIP() -> String? {
+        let interfaces = SCNetworkInterfaceCopyAll() as? [SCNetworkInterface] ?? []
+        for interface in interfaces {
+            guard let interfaceType = SCNetworkInterfaceGetInterfaceType(interface),
+                  CFEqual(interfaceType, kSCNetworkInterfaceTypeIEEE80211),
+                  let name = SCNetworkInterfaceGetBSDName(interface) as String?,
+                  let address = interfaceIPv4(named: name) else { continue }
+            return address
+        }
+        return nil
+    }
     func localNetworkIP() -> String? {
+        if let wifi = wifiIP() { return wifi }
+        return interfaceIPv4(named: nil)
+    }
+    private func interfaceIPv4(named requiredName: String?) -> String? {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let first = interfaces else { return nil }
         defer { freeifaddrs(interfaces) }
         for pointer in sequence(first: first, next: { $0.pointee.ifa_next }) {
             let interface = pointer.pointee
             guard let address = interface.ifa_addr, address.pointee.sa_family == UInt8(AF_INET) else { continue }
+            let name = String(cString: interface.ifa_name)
+            if let requiredName, name != requiredName { continue }
+            if requiredName == nil && ["utun", "ipsec", "ppp"].contains(where: name.hasPrefix) { continue }
             let flags = Int32(interface.ifa_flags)
             guard flags & IFF_UP != 0, flags & IFF_LOOPBACK == 0 else { continue }
             var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))

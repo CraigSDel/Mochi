@@ -41,7 +41,14 @@ struct ServiceDetail: View {
                     }
                     Spacer()
                     if let endpoint = service.endpoint {
-                        MetadataLabel(title: "Endpoint", value: endpoint, symbol: "network")
+                        HStack(spacing: 8) {
+                            MetadataLabel(title: "Endpoint", value: endpoint, symbol: "network")
+                            Button {
+                                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(endpoint, forType: .string)
+                            } label: { Label("Copy endpoint", systemImage: "doc.on.doc") }
+                                .labelStyle(.iconOnly).help("Copy endpoint")
+                        }
+                        .textSelection(.enabled)
                     } else {
                         MetadataLabel(title: "Port", value: "\(manager.configuration(for: service.id).port)", symbol: "number")
                     }
@@ -257,4 +264,3 @@ private struct ModelSelector: View {
         .pickerStyle(.menu)
     }
 }
-
