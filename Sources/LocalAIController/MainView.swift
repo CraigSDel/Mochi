@@ -4,6 +4,7 @@ import AppKit
 struct MainView: View {
     @ObservedObject var manager: ServiceManager
     @ObservedObject var recommendations: RecommendationStore
+    @ObservedObject var memoryMonitor: MemoryMonitor
     @State private var selection: SidebarDestination = .initial
 
     var body: some View {
@@ -45,7 +46,7 @@ struct MainView: View {
         } detail: {
             switch selection {
             case .overview:
-                OverviewView(manager: manager, recommendations: recommendations, selection: $selection)
+                OverviewView(manager: manager, recommendations: recommendations, memoryMonitor: memoryMonitor, selection: $selection)
             case .service(let serviceID):
                 if let service = manager.services.first(where: { $0.id == serviceID }) {
                     ServiceDetail(service: service, manager: manager, recommendations: recommendations)
@@ -54,6 +55,7 @@ struct MainView: View {
                 RecommendationsView(store: recommendations)
             }
         }
+        .background(AppTheme.pageBackground)
         .toolbar {
             Button {
                 manager.refreshModelInventory()
@@ -69,6 +71,8 @@ struct MainView: View {
                 secondaryButton: .cancel(Text("Dismiss"))
             )
         }
+        .onAppear { manager.updateRecommendationMetadata(recommendations.recommendations) }
+        .onReceive(recommendations.$recommendations) { manager.updateRecommendationMetadata($0) }
     }
 
 }
@@ -76,6 +80,7 @@ struct MainView: View {
 struct OverviewView: View {
     @ObservedObject var manager: ServiceManager
     @ObservedObject var recommendations: RecommendationStore
+    @ObservedObject var memoryMonitor: MemoryMonitor
     @Binding var selection: SidebarDestination
 
     private var runningCount: Int { manager.services.filter { $0.state == .running }.count }
@@ -97,9 +102,11 @@ struct OverviewView: View {
                     )
                     Spacer()
                     HStack(spacing: 9) {
-                        Button("Stop All", role: .destructive) { Task { await manager.stopAll() } }.disabled(!canStopAll)
+                        Button("Stop All", role: .destructive) { Task { await manager.stopAll() } }
+                            .buttonStyle(AppleDestructiveButtonStyle())
+                            .disabled(!canStopAll)
                         Button("Start All") { attemptStartAll(manager) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(ApplePrimaryButtonStyle())
                             .disabled(!canStartAll)
                     }
                 }
@@ -110,6 +117,9 @@ struct OverviewView: View {
                     OverviewMetric(title: "Available", value: "\(manager.services.filter(\.definition.supported).count)", symbol: "shippingbox.fill", tone: .neutral)
                 }
 
+                MemoryDashboardView(monitor: memoryMonitor)
+
+                localNetworkCard
                 tailscaleDiagnosticCard
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -139,9 +149,10 @@ struct OverviewView: View {
                 .buttonStyle(.plain)
                 .appCard(padding: 15)
             }
-            .padding(28)
+            .padding(.horizontal, 36)
+            .padding(.vertical, 32)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AppTheme.pageBackground)
     }
 
     private var tailscaleDiagnosticCard: some View {
@@ -159,7 +170,39 @@ struct OverviewView: View {
             }
             Spacer()
             Button(manager.isTestingTailscale ? "Testing…" : "Test Tailscale") { Task { await manager.testTailscale() } }
+                .buttonStyle(AppleSecondaryButtonStyle())
                 .disabled(manager.isTestingTailscale)
+        }
+        .appCard()
+    }
+
+    private var localNetworkCard: some View {
+        let address = manager.localNetworkIP()
+        return HStack(spacing: 14) {
+            Image(systemName: "wifi")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(AppTheme.accent)
+                .frame(width: 42, height: 42)
+                .background(AppTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Local network address").font(.headline)
+                Text(address ?? "No local network IPv4 address detected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+            if let address {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(address, forType: .string)
+                } label: {
+                    Label("Copy address", systemImage: "doc.on.doc")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(AppleIconButtonStyle())
+                .help("Copy local network address")
+            }
         }
         .appCard()
     }
@@ -218,7 +261,7 @@ private struct OverviewServiceCard: View {
                     Button {
                         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(endpoint, forType: .string)
                     } label: { Image(systemName: "doc.on.doc") }
-                        .buttonStyle(.plain).help("Copy endpoint")
+                        .buttonStyle(AppleIconButtonStyle()).help("Copy endpoint")
                 } else {
                     Text("Port \(manager.configuration(for: service.id).port)").lineLimit(1)
                 }
@@ -227,12 +270,14 @@ private struct OverviewServiceCard: View {
             Divider()
             HStack {
                 Button("Open", action: open)
+                    .buttonStyle(AppleSecondaryButtonStyle())
                 Spacer()
                 if canStop {
                     Button("Stop", role: .destructive) { Task { await manager.stop(service.id) } }
+                        .buttonStyle(AppleDestructiveButtonStyle())
                 } else {
                     Button("Start") { attemptStart(service.id, manager: manager) }
-                        .buttonStyle(.borderedProminent).disabled(!canStart)
+                        .buttonStyle(ApplePrimaryButtonStyle()).disabled(!canStart)
                 }
             }
         }

@@ -46,7 +46,9 @@ struct ServiceDetail: View {
                             Button {
                                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(endpoint, forType: .string)
                             } label: { Label("Copy endpoint", systemImage: "doc.on.doc") }
-                                .labelStyle(.iconOnly).help("Copy endpoint")
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(AppleIconButtonStyle())
+                                .help("Copy endpoint")
                         }
                         .textSelection(.enabled)
                     } else {
@@ -63,9 +65,11 @@ struct ServiceDetail: View {
                         Text("Changes are validated before the runtime is launched.").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Stop", role: .destructive) { Task { await manager.stop(service.id) } }.disabled(!canStop)
+                    Button("Stop", role: .destructive) { Task { await manager.stop(service.id) } }
+                        .buttonStyle(AppleDestructiveButtonStyle())
+                        .disabled(!canStop)
                     Button("Start Service") { attemptStart(service.id, manager: manager) }
-                        .buttonStyle(.borderedProminent).disabled(!canStart)
+                        .buttonStyle(ApplePrimaryButtonStyle()).disabled(!canStart)
                 }
                 .appCard()
 
@@ -76,7 +80,7 @@ struct ServiceDetail: View {
                         Button { logsExpanded.toggle() } label: {
                             Label(logsExpanded ? "Collapse" : "Expand", systemImage: logsExpanded ? "chevron.up" : "chevron.down")
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(AppleSecondaryButtonStyle())
                     }
                     Text(service.logText.isEmpty ? "No log output yet." : (logsExpanded ? service.logText : logPreview))
                         .font(.system(.caption, design: .monospaced))
@@ -87,37 +91,56 @@ struct ServiceDetail: View {
                         .background(Color(nsColor: .textBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 10))
                     HStack {
                         Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(service.logText, forType: .string) }
+                            .buttonStyle(AppleSecondaryButtonStyle())
                             .disabled(service.logText.isEmpty)
                         Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([manager.logURL(service.id)]) }
+                            .buttonStyle(AppleSecondaryButtonStyle())
                         Spacer()
-                        Button("Clear", role: .destructive) { manager.clearLog(service.id) }.disabled(service.logText.isEmpty)
+                        Button("Clear", role: .destructive) { manager.clearLog(service.id) }
+                            .buttonStyle(AppleDestructiveButtonStyle())
+                            .disabled(service.logText.isEmpty)
                     }
                 }
                 .appCard()
             }
-            .padding(28)
+            .padding(.horizontal, 36)
+            .padding(.vertical, 32)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AppTheme.pageBackground)
     }
 }
-
 struct ServiceConfigurationEditor: View {
     let serviceID: ServiceID
     @ObservedObject var manager: ServiceManager
     @ObservedObject var recommendations: RecommendationStore
     @State private var advanced = false
-
+    @AppStorage private var includeCatalog: Bool
+    init(serviceID: ServiceID, manager: ServiceManager, recommendations: RecommendationStore) { self.serviceID = serviceID; self.manager = manager; self.recommendations = recommendations; _includeCatalog = AppStorage(wrappedValue: true, ModelCatalogPreferences.key(for: serviceID)) }
     private var configuration: ServiceLaunchConfiguration { manager.configuration(for: serviceID) }
     private var locked: Bool { manager.isConfigurationLocked(serviceID) }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 14) {
                 SectionHeading("Connection", subtitle: "Choose where this service listens and how models are resolved.", symbol: "network")
-                HStack {
-                    TextField("Port", value: commonBinding(\.port), format: .number).frame(maxWidth: 160)
-                    Picker("Network", selection: commonBinding(\.bindMode)) { ForEach(BindMode.allCases) { Text($0.title).tag($0) } }
-                    Picker("Models", selection: commonBinding(\.downloadPolicy)) { ForEach(DownloadPolicy.allCases) { Text($0.title).tag($0) } }
+                HStack(alignment: .top, spacing: 12) {
+                    ConfigurationField("Port") {
+                        TextField("Port", value: commonBinding(\.port), format: .number)
+                            .textFieldStyle(.plain)
+                            .appInputSurface()
+                    }
+                    .frame(maxWidth: 150)
+                    ConfigurationField("Network") {
+                        ThemedMenuPicker(
+                            choices: BindMode.allCases.map { ($0.title, $0) },
+                            selection: commonBinding(\.bindMode)
+                        )
+                    }
+                    ConfigurationField("Model downloads") {
+                        ThemedMenuPicker(
+                            choices: DownloadPolicy.allCases.map { ($0.title, $0) },
+                            selection: commonBinding(\.downloadPolicy)
+                        )
+                    }
                 }
             }
             .disabled(locked)
@@ -127,12 +150,12 @@ struct ServiceConfigurationEditor: View {
                 HStack {
                     SectionHeading("Model", subtitle: configuration.llama != nil ? "Choose a cached or recommended Hugging Face GGUF." : "Assign installed or catalog Ollama models by role.", symbol: "shippingbox")
                     Spacer()
+                    CatalogVisibilityPicker(includeCatalog: $includeCatalog)
                     Button { manager.refreshModelInventory() } label: { Label("Rescan", systemImage: "arrow.clockwise") }
-                        .buttonStyle(.plain).help("Rescan downloaded models")
+                        .buttonStyle(AppleSecondaryButtonStyle()).help("Rescan downloaded models")
                 }
                 if configuration.llama != nil { llamaFields } else if configuration.ollama != nil { ollamaFields }
             }
-            .textFieldStyle(.roundedBorder)
             .disabled(locked)
             .appCard()
 
@@ -155,7 +178,9 @@ struct ServiceConfigurationEditor: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Reset to Defaults") { manager.resetConfiguration(serviceID) }.disabled(locked || configuration == .defaultValue(for: serviceID))
+                    Button("Reset to Defaults") { manager.resetConfiguration(serviceID) }
+                        .buttonStyle(AppleSecondaryButtonStyle())
+                        .disabled(locked || configuration == .defaultValue(for: serviceID))
                 }
             }
             .appCard()
@@ -176,9 +201,9 @@ struct ServiceConfigurationEditor: View {
     }
     private var llamaAdvanced: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                TextField("Context size", value: llamaBinding(\.contextSize), format: .number)
-                TextField("GPU layers", value: llamaBinding(\.gpuLayers), format: .number)
+            ContextSizeSlider(value: llamaBinding(\.contextSize), assessment: manager.memoryAssessment(for: serviceID))
+            ConfigurationField("GPU layers") {
+                styledNumberField("GPU layers", value: llamaBinding(\.gpuLayers))
             }
             DisclosureGroup("Custom model") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -198,12 +223,20 @@ struct ServiceConfigurationEditor: View {
     }
     private var ollamaAdvanced: some View {
         VStack(alignment: .leading, spacing: 8) {
+            ContextSizeSlider(value: ollamaBinding(\.contextLength), assessment: manager.memoryAssessment(for: serviceID))
             Toggle("Flash attention", isOn: ollamaBinding(\.flashAttention))
-            TextField("KV cache type", text: ollamaBinding(\.kvCacheType))
-            HStack {
-                TextField("Context length", value: ollamaBinding(\.contextLength), format: .number)
-                TextField("Parallel requests", value: ollamaBinding(\.parallelRequests), format: .number)
-                TextField("Max loaded models", value: ollamaBinding(\.maxLoadedModels), format: .number)
+            ConfigurationField("KV cache type") {
+                TextField("KV cache type", text: ollamaBinding(\.kvCacheType))
+                    .textFieldStyle(.plain)
+                    .appInputSurface()
+            }
+            HStack(alignment: .top, spacing: 12) {
+                ConfigurationField("Parallel requests") {
+                    styledNumberField("Parallel requests", value: ollamaBinding(\.parallelRequests))
+                }
+                ConfigurationField("Max loaded models") {
+                    styledNumberField("Max loaded models", value: ollamaBinding(\.maxLoadedModels))
+                }
             }
             DisclosureGroup("Custom model names") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -218,7 +251,7 @@ struct ServiceConfigurationEditor: View {
         switch serviceID { case .autocomplete: .coding; case .embeddings: .embedding; case .llamaChat, .ollama: .chat }
     }
     private var llamaOptions: [ModelOption] {
-        ModelOptionBuilder.options(runtime: .llamaCpp, role: modelRole, installed: manager.installedModels, recommendations: recommendations.recommendations, currentLlama: configuration.llama)
+        ModelOptionBuilder.options(runtime: .llamaCpp, role: modelRole, installed: manager.installedModels, recommendations: recommendations.recommendations, currentLlama: configuration.llama, includeCatalog: includeCatalog)
     }
     private var llamaSelection: String {
         guard let llama = configuration.llama else { return "" }
@@ -228,7 +261,7 @@ struct ServiceConfigurationEditor: View {
     @ViewBuilder
     private func ollamaSelector(_ title: String, role: RecommendationRole, keyPath: WritableKeyPath<OllamaLaunchConfiguration, String>) -> some View {
         let current = configuration.ollama![keyPath: keyPath]
-        let options = ModelOptionBuilder.options(runtime: .ollama, role: role, installed: manager.installedModels, recommendations: recommendations.recommendations, currentOllamaName: current)
+        let options = ModelOptionBuilder.options(runtime: .ollama, role: role, installed: manager.installedModels, recommendations: recommendations.recommendations, currentOllamaName: current, includeCatalog: includeCatalog)
         let selection = options.first { ModelOptionBuilder.selectionKey($0) == current }?.id ?? ""
         ModelSelector(title: title, options: options, selection: selection) { option in
             var copy = configuration
@@ -245,22 +278,9 @@ struct ServiceConfigurationEditor: View {
     private func ollamaBinding<Value>(_ keyPath: WritableKeyPath<OllamaLaunchConfiguration, Value>) -> Binding<Value> {
         Binding(get: { configuration.ollama![keyPath: keyPath] }, set: { value in var copy = configuration; copy.ollama![keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
     }
-}
-
-private struct ModelSelector: View {
-    let title: String
-    let options: [ModelOption]
-    let selection: String
-    let onSelect: (ModelOption) -> Void
-
-    var body: some View {
-        Picker(title, selection: Binding(get: { selection }, set: { id in
-            if let option = options.first(where: { $0.id == id }) { onSelect(option) }
-        })) {
-            ForEach(options) { option in
-                Text("\(option.name) — \(option.detail)").tag(option.id)
-            }
-        }
-        .pickerStyle(.menu)
+    private func styledNumberField(_ title: String, value: Binding<Int>) -> some View {
+        TextField(title, value: value, format: .number)
+            .textFieldStyle(.plain)
+            .appInputSurface()
     }
 }

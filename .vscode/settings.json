@@ -1,0 +1,7 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "swift": true,
+        "./check_code_line_lengths.sh": true,
+        "pgrep": true
+    }
+}

@@ -53,4 +53,29 @@ final class ModelOptionBuilderTests: XCTestCase {
         let incomplete = ModelRecommendation(id: "incomplete", name: "incomplete", source: "HF", runtime: "llama.cpp", role: .chat, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: .compatible, rationale: "test", updatedAt: nil)
         XCTAssertTrue(ModelOptionBuilder.options(runtime: .llamaCpp, role: .chat, installed: [], recommendations: [blocked, incomplete]).isEmpty)
     }
+
+    func testInstalledOnlyExcludesCatalogForBothRuntimes() {
+        let ollama = ModelRecommendation(id: "ollama", name: "ollama", source: "Fixture", runtime: "Ollama", role: .chat, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: .compatible, rationale: "test", updatedAt: nil, modelName: "ollama:latest")
+        let llama = ModelRecommendation(id: "llama", name: "llama", source: "Fixture", runtime: "llama.cpp", role: .chat, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: .compatible, rationale: "test", updatedAt: nil, repository: "owner/llama", filename: "llama.gguf")
+
+        XCTAssertTrue(ModelOptionBuilder.options(runtime: .ollama, role: .chat, installed: [], recommendations: [ollama], includeCatalog: false).isEmpty)
+        XCTAssertTrue(ModelOptionBuilder.options(runtime: .llamaCpp, role: .chat, installed: [], recommendations: [llama], includeCatalog: false).isEmpty)
+    }
+
+    func testInstalledOnlyPreservesInstalledOrderingAndMissingCurrent() {
+        let installed = [
+            DiscoveredModel(runtime: .ollama, name: "general:latest", repository: nil, filename: nil, sizeBytes: 10, roleHint: .chat),
+            DiscoveredModel(runtime: .ollama, name: "code:latest", repository: nil, filename: nil, sizeBytes: 20, roleHint: .coding)
+        ]
+
+        let options = ModelOptionBuilder.options(runtime: .ollama, role: .coding, installed: installed, recommendations: [], currentOllamaName: "missing:latest", includeCatalog: false)
+
+        XCTAssertEqual(options.map(\.name), ["code:latest", "general:latest", "missing:latest"])
+        XCTAssertEqual(options.map(\.availability), [.installed, .installed, .missing])
+    }
+
+    func testCatalogPreferenceKeysAreUniquePerService() {
+        let keys = ServiceID.allCases.map(ModelCatalogPreferences.key)
+        XCTAssertEqual(Set(keys).count, ServiceID.allCases.count)
+    }
 }

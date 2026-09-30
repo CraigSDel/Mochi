@@ -51,8 +51,12 @@ final class StartupValidationTests: XCTestCase {
         }
         do {
             let (_, probe, defaults) = context(); probe.physicalMemory = 15 * 1_073_741_824
-            let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false); await manager.start(.llamaChat)
-            XCTAssertTrue(manager.presentedFailure?.message.contains("memory") == true)
+            let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+            XCTAssertTrue(manager.launchWarnings(for: [.llamaChat]).contains { $0.message.contains("safe budget") })
+            await manager.start(.llamaChat)
+            XCTAssertEqual(manager.presentedFailure?.message, "Launch confirmation is required.")
+            await manager.start(.llamaChat, warningsAcknowledged: true)
+            XCTAssertEqual(manager.presentedFailure?.message, "Could not locate start_llama_network.sh.")
         }
     }
 
@@ -141,6 +145,35 @@ final class StartupValidationTests: XCTestCase {
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .secondsSince1970
         let records = try decoder.decode([ManagedProcessRecord].self, from: Data(json.utf8))
         XCTAssertNil(records.first?.bindMode)
+    }
+
+    func testMemoryRootsRequireRunningPIDAndMatchingLaunchCommand() throws {
+        let (directory, probe, defaults) = context()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let record = ManagedProcessRecord(
+            serviceID: .llamaChat,
+            pid: 123,
+            port: 11437,
+            expectedCommand: "start_llama_network.sh",
+            startedAt: Date(),
+            logPath: directory.appendingPathComponent("llamaChat.log").path,
+            bindMode: .localhost
+        )
+        try JSONEncoder().encode([record]).write(to: directory.appendingPathComponent("processes.json"))
+        probe.processRunningCheck = { $0 == 123 }
+        probe.occupiedPorts.insert(11437)
+        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+
+        XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .owned(pid: 123))
+        XCTAssertEqual(manager.managedProcessIDs[.llamaChat], 123)
+        XCTAssertEqual(manager.managedProcessMemoryRoots[.autocomplete], .noOwnedPID(reason: "No launch record"))
+
+        probe.processRunningCheck = { _ in false }
+        XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .noOwnedPID(reason: "Recorded PID 123 is not running"))
+
+        probe.processRunningCheck = { _ in true }
+        probe.processCommandValue = "unrelated-process"
+        XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .noOwnedPID(reason: "Recorded PID 123 command does not match the expected runtime"))
     }
 
     func testValidationAndStartAllPortCollision() {

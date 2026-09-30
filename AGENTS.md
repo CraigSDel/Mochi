@@ -1,0 +1,64 @@
+# Local AI Controller — Swift/macOS
+
+Standards: [`docs/swift-style.md`](docs/swift-style.md) ·
+[`docs/architecture.md`](docs/architecture.md) ·
+[`docs/swiftui.md`](docs/swiftui.md) ·
+[`docs/service-lifecycle.md`](docs/service-lifecycle.md) ·
+[`docs/security-and-networking.md`](docs/security-and-networking.md) ·
+[`docs/testing.md`](docs/testing.md) ·
+[`docs/agentic-workflows.md`](docs/agentic-workflows.md)
+
+## Stack
+
+Swift 6 · Swift Package Manager · SwiftUI + AppKit · macOS 14+ · XCTest.
+
+The repository builds one executable target, `LocalAIController`, and one test
+target, `LocalAIControllerTests`. It packages a locally signed macOS app with
+`build_app.sh` and manages local `llama.cpp`, Ollama, and Tailscale processes.
+
+## Repository map
+
+```text
+Sources/LocalAIController/       application code
+Tests/LocalAIControllerTests/   unit and integration-style tests with fakes
+AppResources/                   Info.plist and application icon
+start_llama_network.sh          llama.cpp launcher
+start_ollama_network.sh         Ollama launcher
+build_app.sh                    release build and app-bundle packaging
+check_code_line_lengths.sh      300-line authored-file quality gate
+```
+
+Add a focused source file when a type has a distinct responsibility. Do not
+turn this small package into a speculative multi-module architecture.
+
+## Gotchas
+
+- UI and observable application state run on `@MainActor`. Keep blocking
+  process, file, and network work off the main actor.
+- A port listener is not automatically owned by this app. Preserve the
+  distinction between managed, external, stopped, and failed services; never
+  terminate a process unless its persisted record and command identity match.
+- Tailscale, localhost, and LAN binding have different security semantics.
+  LAN exposes unauthenticated APIs and must retain explicit user confirmation.
+- Configuration fields are locked while a service is active. One-time bind
+  overrides must not silently rewrite the saved configuration.
+- The controller does not install dependencies or elevate privileges. Missing
+  tools must produce actionable guidance.
+- Use semantic, appearance-aware colors. Every view must remain readable in
+  both light and dark mode; see [`instructions.md`](instructions.md).
+- Keep authored code files at or below 300 lines. Split by responsibility
+  instead of compressing code to evade the check.
+- Preserve backward compatibility for persisted `Codable` records and
+  `UserDefaults` keys unless a migration is part of the change.
+
+## Definition of done
+
+Run the narrowest relevant test while iterating, then run:
+
+```bash
+./check_code_line_lengths.sh
+swift test
+```
+
+For changes to packaging, bundled resources, entitlements, or launch scripts,
+also run `./build_app.sh`. Report any check that could not be run.

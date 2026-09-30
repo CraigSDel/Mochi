@@ -1,10 +1,8 @@
 import Foundation
 import Combine
-
 @MainActor
 final class ServiceManager: ObservableObject {
     static let startAllServiceIDs: [ServiceID] = [.llamaChat, .autocomplete, .embeddings]
-
     @Published private(set) var services: [ServiceSnapshot]
     @Published private(set) var configurations: [ServiceID: ServiceLaunchConfiguration]
     @Published private(set) var installedModels: [DiscoveredModel]
@@ -12,7 +10,6 @@ final class ServiceManager: ObservableObject {
     @Published private(set) var isTestingTailscale = false
     @Published var presentedFailure: ServiceFailure?
     @Published var launchAtLogin = false
-
     private let fileManager: FileManager
     private let probe: any SystemProbing
     private let processFactory: any ProcessMaking
@@ -22,14 +19,14 @@ final class ServiceManager: ObservableObject {
     private var processes: [ServiceID: Process] = [:]
     private var outputHandles: [ServiceID: FileHandle] = [:]
     private var stopRequested: Set<ServiceID> = []
+    private var recommendationMetadata: [ModelRecommendation] = []
     private static let configurationKey = "serviceLaunchConfigurations.v1"
     private let definitions: [ServiceDefinition] = [
         .init(id: .llamaChat, name: "Qwen Chat", detail: "Qwen3.8-27B chat and reasoning", runtime: "llama.cpp", defaultPort: 11437, modelChoice: "chat", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 17_000_000_000, supported: true, unavailableReason: nil),
         .init(id: .autocomplete, name: "Code Autocomplete", detail: "Qwen2.5-Coder-1.5B", runtime: "llama.cpp", defaultPort: 11435, modelChoice: "autocomplete", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 1_200_000_000, supported: true, unavailableReason: nil),
         .init(id: .embeddings, name: "Workspace Embeddings", detail: "Nomic Embed Text v1.5", runtime: "llama.cpp", defaultPort: 11436, modelChoice: "embedding", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 300_000_000, supported: true, unavailableReason: nil),
-        .init(id: .ollama, name: "Ollama", detail: "Installed chat, coding, and embedding models", runtime: "Ollama", defaultPort: 11434, modelChoice: nil, executable: "ollama", modelFormat: "Ollama manifest", estimatedBytes: 20_000_000_000, supported: true, unavailableReason: nil)
+        .init(id: .ollama, name: "Ollama", detail: "Installed chat, coding, and embedding models", runtime: "Ollama", defaultPort: 11434, modelChoice: nil, executable: "ollama", modelFormat: "Ollama manifest", estimatedBytes: 17_000_000_000, supported: true, unavailableReason: nil)
     ]
-
     init(probe: (any SystemProbing)? = nil, processFactory: (any ProcessMaking)? = nil, defaults: UserDefaults = .standard, fileManager: FileManager = .default, startTimer: Bool = true, stopPollAttempts: Int = 20) {
         self.fileManager = fileManager; self.defaults = defaults; self.stopPollAttempts = stopPollAttempts
         let resolvedProbe = probe ?? LiveSystemProbe(fileManager: fileManager)
@@ -44,6 +41,10 @@ final class ServiceManager: ObservableObject {
         }
         var resolvedConfigurations = loaded ?? [:]
         for id in ServiceID.allCases where resolvedConfigurations[id] == nil { resolvedConfigurations[id] = .defaultValue(for: id) }
+        for id in ServiceID.allCases {
+            if let context = resolvedConfigurations[id]?.llama?.contextSize { resolvedConfigurations[id]?.llama?.contextSize = ContextSizeOptions.normalized(context) }
+            else if let context = resolvedConfigurations[id]?.ollama?.contextLength { resolvedConfigurations[id]?.ollama?.contextLength = ContextSizeOptions.normalized(context) }
+        }
         configurations = resolvedConfigurations
         services = definitions.map { ServiceSnapshot(definition: $0) }
         persistConfigurations()
@@ -52,15 +53,35 @@ final class ServiceManager: ObservableObject {
         Task { await refreshStatuses() }
         if startTimer { timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in Task { @MainActor in await self?.refreshStatuses() } } }
     }
-
     var hasManagedRunningServices: Bool { services.contains { $0.pid != nil && [.starting, .running, .stopping].contains($0.state) } }
+    var managedProcessIDs: [ServiceID: Int32] { ManagedProcessOwnership.processIDs(from: managedProcessMemoryRoots) }
+    var managedProcessMemoryRoots: [ServiceID: ManagedProcessRoot] { ManagedProcessOwnership.roots(records: allRecords(), probe: probe) }
     func configuration(for id: ServiceID) -> ServiceLaunchConfiguration { configurations[id] ?? .defaultValue(for: id) }
     func isConfigurationLocked(_ id: ServiceID) -> Bool { services.first(where: { $0.id == id }).map { [.starting, .running, .stopping].contains($0.state) } ?? false }
     func updateConfiguration(_ configuration: ServiceLaunchConfiguration, for id: ServiceID) { guard !isConfigurationLocked(id) else { return }; configurations[id] = configuration; persistConfigurations() }
     func resetConfiguration(_ id: ServiceID) { updateConfiguration(.defaultValue(for: id), for: id) }
     func port(for id: ServiceID) -> Int? { configurations[id]?.port }
     func wifiIP() -> String? { probe.wifiIP() }
+    func localNetworkIP() -> String? { probe.wifiIP() ?? probe.localNetworkIP() }
     func refreshModelInventory() { installedModels = probe.discoverModels() }
+    func updateRecommendationMetadata(_ recommendations: [ModelRecommendation]) { recommendationMetadata = recommendations }
+    func memoryAssessment(for id: ServiceID) -> MemoryAssessment {
+        let config = configuration(for: id)
+        if let llama = config.llama {
+            return ControllerPolicy.memoryAssessment(modelBytes: llamaModelSize(llama, serviceID: id).map { [$0] }, contextSize: llama.contextSize, physicalMemory: probe.physicalMemory)
+        }
+        guard let ollama = config.ollama else { return ControllerPolicy.memoryAssessment(modelBytes: nil, contextSize: 0, physicalMemory: probe.physicalMemory) }
+        let names = Array(Set([ollama.chatModel, ollama.autocompleteModel, ollama.embeddingModel]))
+        let loadedCount = min(max(ollama.maxLoadedModels, 1), names.count)
+        let resolvedSizes = names.map(ollamaModelSize)
+        let sizes: [Int64]?
+        if resolvedSizes.allSatisfy({ $0 != nil }) {
+            sizes = resolvedSizes.compactMap { $0 }.sorted(by: >).prefix(loadedCount).map { $0 }
+        } else if config == ServiceLaunchConfiguration.defaultValue(for: .ollama), let fallback = definition(for: id)?.estimatedBytes {
+            sizes = [fallback]
+        } else { sizes = nil }
+        return ControllerPolicy.memoryAssessment(modelBytes: sizes, contextSize: ollama.contextLength, parallelRequests: ollama.parallelRequests, loadedModelCount: loadedCount, physicalMemory: probe.physicalMemory)
+    }
     @discardableResult
     func testTailscale() async -> TailscaleDiagnostic {
         isTestingTailscale = true
@@ -125,7 +146,8 @@ final class ServiceManager: ObservableObject {
         ids.flatMap { id -> [LaunchWarning] in
             let config = configuration(for: id); var warnings: [LaunchWarning] = []
             if config.bindMode == .lan { warnings.append(.init(serviceID: id, message: "\(serviceName(id)) will expose an unauthenticated API to the local network.")) }
-            if config.hasCustomModels(comparedTo: .defaultValue(for: id)) { warnings.append(.init(serviceID: id, message: "\(serviceName(id)) uses custom model identifiers whose memory requirements are unverified.")) }
+            let assessment = memoryAssessment(for: id)
+            if assessment.requiresConfirmation { warnings.append(.init(serviceID: id, message: "\(serviceName(id)): \(assessment.message)")) }
             return warnings
         }
     }
@@ -182,10 +204,8 @@ final class ServiceManager: ObservableObject {
         guard !occupied else { fail(index, "Port \(config.port) is already occupied.", "Stop the external service or choose another port."); return }
         guard let executable = probe.commandPath(definition.executable ?? "") else { fail(index, "\(definition.executable ?? definition.runtime) is not installed.", "Run: brew install \(id == .ollama ? "ollama" : "llama.cpp")"); return }
         append(id, "Runtime executable: \(executable)")
-        let customModels = config.hasCustomModels(comparedTo: .defaultValue(for: id))
-        let safe = customModels || ((definition.runtime == "Ollama" || definition.modelFormat == "GGUF") && ControllerPolicy.fits(sizeBytes: definition.estimatedBytes, physicalMemory: probe.physicalMemory))
-        append(id, "Model validation: \(customModels ? "custom/unverified (acknowledged)" : "default; memory fit=\(safe)")")
-        guard safe else { fail(index, "Model format or estimated memory use is not safe for this Mac.", "Choose a smaller compatible model."); return }
+        let assessment = memoryAssessment(for: id)
+        append(id, "Memory assessment: \(assessment.severity.rawValue); \(assessment.message)")
         if config.bindMode == .tailscale {
             guard probe.commandPath("tailscale") != nil else { fail(index, "Tailscale is not installed.", "Run: brew install tailscale"); return }
             guard probe.tailscaleIP() != nil else { fail(index, "Tailscale is not connected.", "Connect Tailscale outside the app, then retry."); return }
@@ -248,6 +268,14 @@ final class ServiceManager: ObservableObject {
     func logURL(_ id: ServiceID) -> URL { probe.supportDirectory.appendingPathComponent("\(id.rawValue).log") }
     private func resolvedHosts(for bind: BindMode) -> (display: String, health: String)? { switch bind { case .tailscale: guard probe.commandPath("tailscale") != nil, let ip = probe.tailscaleIP() else { return nil }; return (ip, ip); case .localhost: return ("127.0.0.1", "127.0.0.1"); case .lan: guard let ip = probe.wifiIP() ?? probe.localNetworkIP() else { return nil }; return (ip, "127.0.0.1") } }
     private func serviceName(_ id: ServiceID) -> String { definitions.first(where: { $0.id == id })?.name ?? id.rawValue }
+    private func definition(for id: ServiceID) -> ServiceDefinition? { definitions.first { $0.id == id } }
+    private func llamaModelSize(_ llama: LlamaLaunchConfiguration, serviceID: ServiceID) -> Int64? {
+        if let size = installedModels.first(where: { $0.runtime == .llamaCpp && $0.repository == llama.repository && $0.filename == llama.filename })?.sizeBytes { return size }
+        if let size = recommendationMetadata.first(where: { $0.repository == llama.repository && $0.filename == llama.filename })?.sizeBytes { return size }
+        let defaults = ServiceLaunchConfiguration.defaultValue(for: serviceID).llama
+        return defaults?.repository == llama.repository && defaults?.filename == llama.filename ? definition(for: serviceID)?.estimatedBytes : nil
+    }
+    private func ollamaModelSize(_ name: String) -> Int64? { installedModels.first(where: { $0.runtime == .ollama && $0.name == name })?.sizeBytes ?? recommendationMetadata.first(where: { $0.modelName == name })?.sizeBytes }
     private static func loadConfigurations(from defaults: UserDefaults) -> [ServiceID: ServiceLaunchConfiguration]? { guard let data = defaults.data(forKey: configurationKey), let stored = try? JSONDecoder().decode([String: ServiceLaunchConfiguration].self, from: data) else { return nil }; return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in ServiceID(rawValue: key).map { ($0, value) } }) }
     private func persistConfigurations() { let stored = Dictionary(uniqueKeysWithValues: configurations.map { ($0.key.rawValue, $0.value) }); if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.configurationKey) } }
     private func ensureLog(_ id: ServiceID) { try? fileManager.createDirectory(at: probe.supportDirectory, withIntermediateDirectories: true); if !fileManager.fileExists(atPath: logURL(id).path) { fileManager.createFile(atPath: logURL(id).path, contents: nil) } }
@@ -261,6 +289,6 @@ final class ServiceManager: ObservableObject {
     private func loadRecord(_ id: ServiceID) -> ManagedProcessRecord? { allRecords().first { $0.serviceID == id } }
     private func save(_ record: ManagedProcessRecord) { var records = allRecords().filter { $0.serviceID != record.serviceID }; records.append(record); if let data = try? JSONEncoder().encode(records) { try? data.write(to: recordsURL(), options: .atomic) } }
     private func removeRecord(_ id: ServiceID) { if let data = try? JSONEncoder().encode(allRecords().filter { $0.serviceID != id }) { try? data.write(to: recordsURL(), options: .atomic) } }
-    private func validate(_ record: ManagedProcessRecord) -> Bool { probe.isProcessRunning(record.pid) && { let command = probe.processCommand(record.pid); return command.contains(record.expectedCommand) || command.contains("llama-server") || (record.serviceID == .ollama && command.contains("bash")) }() }
+    private func validate(_ record: ManagedProcessRecord) -> Bool { if case .owned = ManagedProcessOwnership.root(record, probe: probe) { return true }; return false }
     private func tail(_ path: String) -> String { guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return "" }; defer { try? handle.close() }; let size = (try? handle.seekToEnd()) ?? 0; try? handle.seek(toOffset: size > 64_000 ? size - 64_000 : 0); return String(data: handle.readDataToEndOfFile(), encoding: .utf8) ?? "" }
 }

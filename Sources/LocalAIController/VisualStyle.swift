@@ -1,17 +1,42 @@
 import SwiftUI
+import AppKit
 
 enum AppTheme {
-    static let accent = Color(red: 0.06, green: 0.63, blue: 0.56)
-    static let mint = Color(red: 0.36, green: 0.88, blue: 0.70)
-    static let cornerRadius: CGFloat = 16
+    static let accent = adaptiveColor(
+        light: NSColor(red: 0, green: 0.443, blue: 0.89, alpha: 1),
+        dark: NSColor(red: 0.039, green: 0.518, blue: 1, alpha: 1)
+    )
+    static let accentPressed = adaptiveColor(
+        light: NSColor(red: 0, green: 0.333, blue: 0.776, alpha: 1),
+        dark: NSColor(red: 0, green: 0.408, blue: 0.86, alpha: 1)
+    )
+    static let surface = adaptiveColor(
+        light: NSColor(red: 0.961, green: 0.961, blue: 0.969, alpha: 1),
+        dark: NSColor(red: 0.173, green: 0.173, blue: 0.18, alpha: 1)
+    )
+    static let pageBackground = adaptiveColor(
+        light: .white,
+        dark: NSColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1)
+    )
+    static let primaryText = Color(nsColor: .labelColor)
+    static let secondaryText = Color(nsColor: .secondaryLabelColor)
+    static let tertiaryText = Color(nsColor: .tertiaryLabelColor)
+    static let separator = Color(nsColor: .separatorColor)
+    static let cornerRadius: CGFloat = 18
+
+    private static func adaptiveColor(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        })
+    }
 
     static func color(for tone: StatusTone) -> Color {
         switch tone {
         case .accent: accent
-        case .success: .green
+        case .success: Color(red: 0.204, green: 0.78, blue: 0.349)
         case .warning: .orange
-        case .danger: .red
-        case .neutral: .secondary
+        case .danger: Color(red: 1, green: 0.231, blue: 0.188)
+        case .neutral: secondaryText
         }
     }
 }
@@ -22,18 +47,23 @@ struct AppCardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous)
-                    .stroke(.primary.opacity(0.08), lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.06), radius: 14, y: 5)
+            .background(AppTheme.surface, in: RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
     }
 }
 
 extension View {
     func appCard(padding: CGFloat = 18) -> some View {
         modifier(AppCardModifier(padding: padding))
+    }
+
+    func appInputSurface() -> some View {
+        padding(.horizontal, 12)
+            .frame(minHeight: 36)
+            .background(AppTheme.pageBackground.opacity(0.72), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(AppTheme.separator.opacity(0.45), lineWidth: 1)
+            }
     }
 }
 
@@ -43,19 +73,12 @@ struct BrandMark: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [AppTheme.mint, AppTheme.accent],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(AppTheme.accent)
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.system(size: size * 0.48, weight: .semibold))
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)
-        .shadow(color: AppTheme.accent.opacity(0.25), radius: 7, y: 3)
         .accessibilityHidden(true)
     }
 }
@@ -68,28 +91,94 @@ struct PageHeader: View {
     var tone: StatusTone = .accent
 
     var body: some View {
-        HStack(alignment: .center, spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(AppTheme.color(for: tone).opacity(0.13))
-                Image(systemName: symbol)
-                    .font(.system(size: 23, weight: .semibold))
-                    .foregroundStyle(AppTheme.color(for: tone))
-            }
-            .frame(width: 52, height: 52)
-
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(eyebrow.uppercased())
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.2)
+                    .font(.caption.weight(.semibold))
+                    .tracking(0.8)
                     .foregroundStyle(AppTheme.accent)
                 Text(title)
-                    .font(.system(.title, design: .rounded, weight: .bold))
+                    .font(.system(size: 34, weight: .semibold, design: .default))
+                    .tracking(-0.7)
+                    .foregroundStyle(AppTheme.primaryText)
                 Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 15))
+                    .foregroundStyle(AppTheme.secondaryText)
             }
         }
+    }
+}
+
+struct ApplePrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 20)
+            .frame(minHeight: 38)
+            .background(configuration.isPressed ? AppTheme.accentPressed : AppTheme.accent, in: Capsule())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.92 : 1) : 0.4)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+struct AppleSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(isEnabled ? AppTheme.accent : AppTheme.tertiaryText)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(
+                isEnabled ? AppTheme.accent.opacity(configuration.isPressed ? 0.2 : 0.11) : AppTheme.separator.opacity(0.12),
+                in: Capsule()
+            )
+            .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+struct AppleDestructiveButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15, weight: .medium))
+            .foregroundStyle(isEnabled ? AppTheme.color(for: .danger) : AppTheme.tertiaryText)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 36)
+            .background(
+                isEnabled
+                    ? AppTheme.color(for: .danger).opacity(configuration.isPressed ? 0.2 : 0.1)
+                    : AppTheme.separator.opacity(0.12),
+                in: Capsule()
+            )
+            .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+struct AppleIconButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isEnabled ? AppTheme.accent : AppTheme.tertiaryText)
+            .frame(width: 36, height: 36)
+            .background(
+                isEnabled ? AppTheme.accent.opacity(configuration.isPressed ? 0.2 : 0.11) : AppTheme.separator.opacity(0.12),
+                in: Circle()
+            )
+            .contentShape(Circle())
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

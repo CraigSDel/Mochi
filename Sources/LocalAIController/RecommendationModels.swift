@@ -63,6 +63,21 @@ enum Compatibility: String, Codable, Sendable {
     case incompatible = "Incompatible"
 }
 
+enum RecommendationCompatibilityFilter: String, Codable, CaseIterable, Sendable {
+    case all
+    case compatibleOnly
+
+    func includes(_ recommendation: ModelRecommendation) -> Bool {
+        self == .all || recommendation.compatibility == .compatible
+    }
+
+    func apply(to recommendations: [ModelRecommendation], role: RecommendationRole? = nil) -> [ModelRecommendation] {
+        recommendations.filter { recommendation in
+            includes(recommendation) && (role == nil || recommendation.role == role)
+        }
+    }
+}
+
 struct ModelRecommendation: Identifiable, Codable, Hashable, Sendable {
     let id: String
     let name: String
@@ -185,13 +200,14 @@ enum ModelOptionBuilder {
         installed: [DiscoveredModel],
         recommendations: [ModelRecommendation],
         currentLlama: LlamaLaunchConfiguration? = nil,
-        currentOllamaName: String? = nil
+        currentOllamaName: String? = nil,
+        includeCatalog: Bool = true
     ) -> [ModelOption] {
         var result = installed.filter { $0.runtime == runtime }.map {
             ModelOption(id: $0.id, runtime: $0.runtime, name: $0.name, repository: $0.repository, filename: $0.filename, sizeBytes: $0.sizeBytes, roleHint: $0.roleHint, availability: .installed)
         }
         let installedKeys = Set(result.map(selectionKey))
-        let catalog: [ModelOption] = recommendations.compactMap { recommendation in
+        let catalog: [ModelOption] = includeCatalog ? recommendations.compactMap { recommendation in
             guard recommendation.compatibility != .incompatible else { return nil }
             switch runtime {
             case .llamaCpp:
@@ -203,7 +219,7 @@ enum ModelOptionBuilder {
                 let option = ModelOption(id: "catalog:ollama:\(name)", runtime: .ollama, name: name, repository: nil, filename: nil, sizeBytes: recommendation.sizeBytes, roleHint: recommendation.role, availability: .catalog)
                 return installedKeys.contains(selectionKey(option)) ? nil : option
             }
-        }
+        } : []
         result += catalog
         result.sort {
             let lhs = rank($0, role: role), rhs = rank($1, role: role)

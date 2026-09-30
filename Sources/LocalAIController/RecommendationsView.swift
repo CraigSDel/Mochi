@@ -3,8 +3,10 @@ import SwiftUI
 struct RecommendationsView: View {
     @ObservedObject var store: RecommendationStore
     @State private var role: RecommendationRole?
-    var filtered: [ModelRecommendation] { role.map { wanted in store.recommendations.filter { $0.role == wanted } } ?? store.recommendations }
+    @AppStorage("recommendations.compatibilityFilter") private var compatibilityFilter: RecommendationCompatibilityFilter = .all
+    var filtered: [ModelRecommendation] { compatibilityFilter.apply(to: store.recommendations, role: role) }
     private var hasFailure: Bool { store.status.hasPrefix("Unavailable") }
+    private var hasActiveFilter: Bool { role != nil || compatibilityFilter != .all }
 
     var body: some View {
         ScrollView {
@@ -24,16 +26,35 @@ struct RecommendationsView: View {
                             Label("Check Now", systemImage: "arrow.clockwise")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(ApplePrimaryButtonStyle())
                     .disabled(store.isRefreshing)
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Picker("Role", selection: $role) {
-                        Text("All roles").tag(nil as RecommendationRole?)
-                        ForEach(RecommendationRole.allCases, id: \.self) { Text($0.rawValue).tag($0 as RecommendationRole?) }
+                    HStack(spacing: 12) {
+                        Text("Role")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppTheme.secondaryText)
+                        HStack(spacing: 4) {
+                            roleButton("All roles", value: nil)
+                            ForEach(RecommendationRole.allCases, id: \.self) { item in
+                                roleButton(item.rawValue, value: item)
+                            }
+                        }
+                        .padding(4)
+                        .background(AppTheme.pageBackground.opacity(0.72), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                     }
-                    .pickerStyle(.segmented)
+                    HStack(spacing: 12) {
+                        Text("Compatibility")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppTheme.secondaryText)
+                        HStack(spacing: 4) {
+                            compatibilityButton("All", value: .all)
+                            compatibilityButton("Compatible only", value: .compatibleOnly)
+                        }
+                        .padding(4)
+                        .background(AppTheme.pageBackground.opacity(0.72), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    }
                     HStack(spacing: 8) {
                         Image(systemName: hasFailure ? "exclamationmark.triangle.fill" : "checkmark.shield.fill")
                             .foregroundStyle(hasFailure ? Color.orange : AppTheme.accent)
@@ -50,8 +71,8 @@ struct RecommendationsView: View {
                 if filtered.isEmpty && !store.isRefreshing {
                     FriendlyEmptyState(
                         symbol: hasFailure ? "wifi.exclamationmark" : "sparkles",
-                        title: hasFailure ? "Recommendations unavailable" : "No recommendations yet",
-                        message: hasFailure ? "Check your connection and try again. Cached results will remain available." : "Check the registries now to find models that fit this Mac."
+                        title: hasFailure ? "Recommendations unavailable" : (hasActiveFilter && !store.recommendations.isEmpty ? "No matching recommendations" : "No recommendations yet"),
+                        message: hasFailure ? "Check your connection and try again. Cached results will remain available." : (hasActiveFilter && !store.recommendations.isEmpty ? "Change the role or compatibility filter to see more models." : "Check the registries now to find models that fit this Mac.")
                     )
                 } else {
                     LazyVStack(spacing: 12) {
@@ -59,9 +80,42 @@ struct RecommendationsView: View {
                     }
                 }
             }
-            .padding(28)
+            .padding(.horizontal, 36)
+            .padding(.vertical, 32)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(AppTheme.pageBackground)
+    }
+
+    private func roleButton(_ title: String, value: RecommendationRole?) -> some View {
+        let selected = role == value
+        return Button {
+            withAnimation(.easeOut(duration: 0.16)) { role = value }
+        } label: {
+            Text(title)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(selected ? Color.white : AppTheme.secondaryText)
+                .frame(maxWidth: .infinity, minHeight: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(selected ? AppTheme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func compatibilityButton(_ title: String, value: RecommendationCompatibilityFilter) -> some View {
+        let selected = compatibilityFilter == value
+        return Button {
+            withAnimation(.easeOut(duration: 0.16)) { compatibilityFilter = value }
+        } label: {
+            Text(title)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(selected ? Color.white : AppTheme.secondaryText)
+                .frame(maxWidth: .infinity, minHeight: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(selected ? AppTheme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -97,4 +151,3 @@ private struct RecommendationCard: View {
         .appCard()
     }
 }
-

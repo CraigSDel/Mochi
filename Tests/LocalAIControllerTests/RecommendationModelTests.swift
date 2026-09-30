@@ -29,4 +29,42 @@ final class RecommendationModelTests: XCTestCase {
         XCTAssertNil(model.filename)
         XCTAssertNil(model.modelName)
     }
+
+    func testCompatibilityFilterCombinesWithRole() {
+        let compatibleChat = recommendation(id: "compatible-chat", role: .chat, compatibility: .compatible)
+        let compatibleCoding = recommendation(id: "compatible-coding", role: .coding, compatibility: .compatible)
+        let unverifiedChat = recommendation(id: "unverified-chat", role: .chat, compatibility: .unverified)
+        let recommendations = [compatibleChat, compatibleCoding, unverifiedChat]
+
+        XCTAssertEqual(RecommendationCompatibilityFilter.all.apply(to: recommendations).map(\.id), recommendations.map(\.id))
+        XCTAssertEqual(RecommendationCompatibilityFilter.compatibleOnly.apply(to: recommendations).map(\.id), ["compatible-chat", "compatible-coding"])
+        XCTAssertEqual(RecommendationCompatibilityFilter.compatibleOnly.apply(to: recommendations, role: .chat).map(\.id), ["compatible-chat"])
+    }
+
+    func testCompatibilityFilterRoundTripsThroughDefaults() {
+        let suiteName = "RecommendationCompatibilityFilterTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(RecommendationCompatibilityFilter.compatibleOnly.rawValue, forKey: "filter")
+        XCTAssertEqual(RecommendationCompatibilityFilter(rawValue: defaults.string(forKey: "filter")!), .compatibleOnly)
+    }
+
+    func testCuratedLlamaCppRecommendationsAreLaunchableAndFitThisMac() async throws {
+        let recommendations = try await CuratedLlamaCppProvider().fetch()
+
+        XCTAssertEqual(Set(recommendations.map(\.role)), Set(RecommendationRole.allCases))
+        XCTAssertTrue(recommendations.allSatisfy { $0.runtime == "llama.cpp" })
+        XCTAssertTrue(recommendations.allSatisfy { $0.repository != nil && $0.filename?.hasSuffix(".gguf") == true })
+        XCTAssertTrue(recommendations.allSatisfy { $0.compatibility == .compatible })
+        for recommendation in recommendations {
+            let options = ModelOptionBuilder.options(runtime: .llamaCpp, role: recommendation.role, installed: [], recommendations: [recommendation])
+            XCTAssertEqual(options.first?.repository, recommendation.repository)
+            XCTAssertEqual(options.first?.filename, recommendation.filename)
+        }
+    }
+
+    private func recommendation(id: String, role: RecommendationRole, compatibility: Compatibility) -> ModelRecommendation {
+        ModelRecommendation(id: id, name: id, source: "Fixture", runtime: "Ollama", role: role, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: compatibility, rationale: "test", updatedAt: nil, modelName: "\(id):latest")
+    }
 }
