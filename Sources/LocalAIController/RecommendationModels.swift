@@ -18,19 +18,15 @@ struct DiscoveredModel: Identifiable, Hashable, Sendable {
     let filename: String?
     let sizeBytes: Int64?
     let roleHint: RecommendationRole
+    /// Detected from local metadata only: an Ollama projector manifest layer, or
+    /// an `mmproj-*.gguf` sibling in a Hugging Face snapshot.
+    let supportsVision: Bool
 
     var id: String {
         switch runtime {
         case .llamaCpp: "llama:\(repository ?? ""):\(filename ?? name)"
         case .ollama: "ollama:\(name)"
         }
-    }
-
-    static func inferredRole(from value: String) -> RecommendationRole {
-        let lower = value.lowercased()
-        if lower.contains("embed") || lower.contains("bert") { return .embedding }
-        if lower.contains("coder") || lower.contains("code") || lower.contains("fim") { return .coding }
-        return .chat
     }
 }
 
@@ -39,6 +35,7 @@ enum ModelAvailability: String, Sendable {
     case catalog = "Download required"
     case custom = "Custom"
     case missing = "Unavailable"
+    case unsupported = "Multimodal (not supported)"
 }
 
 struct ModelOption: Identifiable, Hashable, Sendable {
@@ -159,7 +156,10 @@ struct ModelInventoryScanner {
             let layers = object["layers"] as? [[String: Any]]
             let size = layers?.filter { ($0["mediaType"] as? String)?.contains("image.model") == true }
                 .compactMap { ($0["size"] as? NSNumber)?.int64Value }.reduce(0, +)
-            models.append(.init(runtime: .ollama, name: name, repository: nil, filename: nil, sizeBytes: size.flatMap { $0 > 0 ? $0 : nil }, roleHint: DiscoveredModel.inferredRole(from: name)))
+            // Ollama writes a projector layer for vision models. `image.adapter`
+            // is a LoRA and deliberately does not count.
+            let supportsVision = layers?.contains { ($0["mediaType"] as? String) == "application/vnd.ollama.image.projector" } == true
+            models.append(.init(runtime: .ollama, name: name, repository: nil, filename: nil, sizeBytes: size.flatMap { $0 > 0 ? $0 : nil }, roleHint: ModelCapability.role(inferringFrom: name), supportsVision: supportsVision))
         }
         return unique(models)
     }
@@ -174,14 +174,25 @@ struct ModelInventoryScanner {
             let repository = pieces[0] + "/" + pieces.dropFirst().joined(separator: "--")
             let snapshots = repositoryURL.appendingPathComponent("snapshots")
             guard let enumerator = fileManager.enumerator(at: snapshots, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey]) else { continue }
+            // Collected first, flagged second: directory enumeration order is not
+            // guaranteed, so a projector must not depend on being visited last.
+            var hasProjector = false
+            var bases: [(label: String, filename: String, size: Int64?)] = []
             for case let fileURL as URL in enumerator where fileURL.pathExtension.lowercased() == "gguf" {
                 guard fileManager.fileExists(atPath: fileURL.path) else { continue }
                 let attributes = try? fileManager.attributesOfItem(atPath: fileURL.path)
                 let filename = fileURL.lastPathComponent
-                guard !filename.lowercased().contains("mmproj") else { continue }
+                guard !filename.lowercased().contains("mmproj") else {
+                    // The projector is not a standalone model, but its presence
+                    // is what makes the base GGUF multimodal.
+                    hasProjector = true
+                    continue
+                }
                 let label = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
-                let size = (attributes?[.size] as? NSNumber)?.int64Value
-                models.append(.init(runtime: .llamaCpp, name: label, repository: repository, filename: filename, sizeBytes: size, roleHint: DiscoveredModel.inferredRole(from: repository + " " + filename)))
+                bases.append((label, filename, (attributes?[.size] as? NSNumber)?.int64Value))
+            }
+            models += bases.map {
+                .init(runtime: .llamaCpp, name: $0.label, repository: repository, filename: $0.filename, sizeBytes: $0.size, roleHint: ModelCapability.role(inferringFrom: repository + " " + $0.filename), supportsVision: hasProjector)
             }
         }
         return unique(models)
@@ -190,62 +201,5 @@ struct ModelInventoryScanner {
     private func unique(_ models: [DiscoveredModel]) -> [DiscoveredModel] {
         var seen: Set<String> = []
         return models.filter { seen.insert($0.id).inserted }
-    }
-}
-
-enum ModelOptionBuilder {
-    static func options(
-        runtime: ModelRuntime,
-        role: RecommendationRole,
-        installed: [DiscoveredModel],
-        recommendations: [ModelRecommendation],
-        currentLlama: LlamaLaunchConfiguration? = nil,
-        currentOllamaName: String? = nil,
-        includeCatalog: Bool = true
-    ) -> [ModelOption] {
-        var result = installed.filter { $0.runtime == runtime }.map {
-            ModelOption(id: $0.id, runtime: $0.runtime, name: $0.name, repository: $0.repository, filename: $0.filename, sizeBytes: $0.sizeBytes, roleHint: $0.roleHint, availability: .installed)
-        }
-        let installedKeys = Set(result.map(selectionKey))
-        let catalog: [ModelOption] = includeCatalog ? recommendations.compactMap { recommendation in
-            guard recommendation.compatibility != .incompatible else { return nil }
-            switch runtime {
-            case .llamaCpp:
-                guard let repository = recommendation.repository, let filename = recommendation.filename else { return nil }
-                let option = ModelOption(id: "catalog:llama:\(repository):\(filename)", runtime: .llamaCpp, name: recommendation.name, repository: repository, filename: filename, sizeBytes: recommendation.sizeBytes, roleHint: recommendation.role, availability: .catalog)
-                return installedKeys.contains(selectionKey(option)) ? nil : option
-            case .ollama:
-                guard let name = recommendation.modelName else { return nil }
-                let option = ModelOption(id: "catalog:ollama:\(name)", runtime: .ollama, name: name, repository: nil, filename: nil, sizeBytes: recommendation.sizeBytes, roleHint: recommendation.role, availability: .catalog)
-                return installedKeys.contains(selectionKey(option)) ? nil : option
-            }
-        } : []
-        result += catalog
-        result.sort {
-            let lhs = rank($0, role: role), rhs = rank($1, role: role)
-            return lhs == rhs ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending : lhs < rhs
-        }
-
-        let current: ModelOption?
-        switch runtime {
-        case .llamaCpp:
-            current = currentLlama.map { .init(id: "current:llama:\($0.repository):\($0.filename)", runtime: .llamaCpp, name: $0.alias, repository: $0.repository, filename: $0.filename, sizeBytes: nil, roleHint: role, availability: .missing) }
-        case .ollama:
-            current = currentOllamaName.map { .init(id: "current:ollama:\($0)", runtime: .ollama, name: $0, repository: nil, filename: nil, sizeBytes: nil, roleHint: role, availability: .missing) }
-        }
-        if let current, !result.contains(where: { selectionKey($0) == selectionKey(current) }) { result.append(current) }
-        return result
-    }
-
-    static func selectionKey(_ option: ModelOption) -> String {
-        switch option.runtime {
-        case .llamaCpp: "\(option.repository ?? "")|\(option.filename ?? "")"
-        case .ollama: option.name
-        }
-    }
-
-    private static func rank(_ option: ModelOption, role: RecommendationRole) -> Int {
-        let availability = option.availability == .installed ? 0 : 2
-        return availability + (option.roleHint == role ? 0 : 1)
     }
 }

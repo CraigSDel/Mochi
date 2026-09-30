@@ -262,7 +262,7 @@ struct ServiceConfigurationEditor: View {
     private func ollamaSelector(_ title: String, role: RecommendationRole, keyPath: WritableKeyPath<OllamaLaunchConfiguration, String>) -> some View {
         let current = configuration.ollama![keyPath: keyPath]
         let options = ModelOptionBuilder.options(runtime: .ollama, role: role, installed: manager.installedModels, recommendations: recommendations.recommendations, currentOllamaName: current, includeCatalog: includeCatalog)
-        let selection = options.first { ModelOptionBuilder.selectionKey($0) == current }?.id ?? ""
+        let selection = options.first { ModelOptionBuilder.selectionKey($0) == OllamaModelReference.key(current) }?.id ?? ""
         ModelSelector(title: title, options: options, selection: selection) { option in
             var copy = configuration
             copy.ollama![keyPath: keyPath] = option.name

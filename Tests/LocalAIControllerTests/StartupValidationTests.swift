@@ -79,23 +79,23 @@ final class StartupValidationTests: XCTestCase {
         let script = URL(fileURLWithPath: "/tmp/start.sh")
         let cached = ServiceLaunchConfiguration.defaultValue(for: .llamaChat)
         var downloads = cached; downloads.downloadPolicy = .allowDownloads
-        XCTAssertTrue(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: cached).contains("--offline"))
-        XCTAssertFalse(ServiceManager.launchArguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: downloads).contains("--offline"))
-        XCTAssertTrue(ServiceManager.launchArguments(id: .ollama, script: script, modelChoice: nil, configuration: .defaultValue(for: .ollama)).contains("--no-pull"))
+        XCTAssertTrue(LaunchInvocation.arguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: cached).contains("--offline"))
+        XCTAssertFalse(LaunchInvocation.arguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: downloads).contains("--offline"))
+        XCTAssertTrue(LaunchInvocation.arguments(id: .ollama, script: script, modelChoice: nil, configuration: .defaultValue(for: .ollama)).contains("--no-pull"))
         var ollama = ServiceLaunchConfiguration.defaultValue(for: .ollama); ollama.port = 12001; ollama.bindMode = .localhost
-        let arguments = ServiceManager.launchArguments(id: .ollama, script: script, modelChoice: nil, configuration: ollama)
+        let arguments = LaunchInvocation.arguments(id: .ollama, script: script, modelChoice: nil, configuration: ollama)
         XCTAssertTrue(arguments.contains("12001")); XCTAssertTrue(arguments.contains("localhost"))
     }
 
     func testLaunchEnvironmentIncludesSystemAdministrationPaths() {
-        let environment = ServiceManager.launchEnvironment(id: .llamaChat, configuration: .defaultValue(for: .llamaChat), base: ["PATH": "/usr/bin:/bin", "PRESERVED": "yes"])
+        let environment = LaunchInvocation.environment(id: .llamaChat, configuration: .defaultValue(for: .llamaChat), base: ["PATH": "/usr/bin:/bin", "PRESERVED": "yes"])
         let paths = environment["PATH"]?.split(separator: ":").map(String.init) ?? []
         XCTAssertTrue(paths.contains("/usr/sbin"))
         XCTAssertTrue(paths.contains("/sbin"))
         XCTAssertEqual(environment["PRESERVED"], "yes")
         XCTAssertEqual(environment["LLAMA_CHAT_REPO"], "unsloth/Qwen3.8-27B-GGUF")
         XCTAssertEqual(environment["LLAMA_CHAT_PORT"], "11437")
-        let ollama = ServiceManager.launchEnvironment(id: .ollama, configuration: .defaultValue(for: .ollama), base: [:])
+        let ollama = LaunchInvocation.environment(id: .ollama, configuration: .defaultValue(for: .ollama), base: [:])
         XCTAssertEqual(ollama["OLLAMA_CHAT_MODEL"], "qwen3.8:27b")
         XCTAssertEqual(ollama["OLLAMA_NUM_PARALLEL"], "2")
     }
@@ -103,7 +103,7 @@ final class StartupValidationTests: XCTestCase {
     func testLaunchEnvironmentContainsEveryConfiguredRuntimeValue() {
         var llama = ServiceLaunchConfiguration.defaultValue(for: .autocomplete)
         llama.port = 12002; llama.llama = .init(repository: "owner/repo", filename: "model.gguf", alias: "custom", contextSize: 4096, gpuLayers: 42)
-        let llamaEnvironment = ServiceManager.launchEnvironment(id: .autocomplete, configuration: llama, base: [:])
+        let llamaEnvironment = LaunchInvocation.environment(id: .autocomplete, configuration: llama, base: [:])
         XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_PORT"], "12002")
         XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_REPO"], "owner/repo")
         XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_FILE"], "model.gguf")
@@ -113,7 +113,7 @@ final class StartupValidationTests: XCTestCase {
 
         var ollama = ServiceLaunchConfiguration.defaultValue(for: .ollama)
         ollama.port = 12003; ollama.ollama = .init(chatModel: "chat:x", autocompleteModel: "code:x", embeddingModel: "embed:x", flashAttention: false, kvCacheType: "f16", contextLength: 2048, parallelRequests: 3, maxLoadedModels: 2)
-        let ollamaEnvironment = ServiceManager.launchEnvironment(id: .ollama, configuration: ollama, base: [:])
+        let ollamaEnvironment = LaunchInvocation.environment(id: .ollama, configuration: ollama, base: [:])
         XCTAssertEqual(ollamaEnvironment["OLLAMA_PORT"], "12003")
         XCTAssertEqual(ollamaEnvironment["OLLAMA_CHAT_MODEL"], "chat:x")
         XCTAssertEqual(ollamaEnvironment["OLLAMA_AUTOCOMPLETE_MODEL"], "code:x")

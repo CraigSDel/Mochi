@@ -115,8 +115,10 @@ final class ServiceManager: ObservableObject {
             return installed ? [] : [llama.alias]
         }
         guard let ollama = configuration.ollama else { return [] }
-        let installedNames = Set(installedModels.filter { $0.runtime == .ollama }.map(\.name))
-        return [ollama.chatModel, ollama.autocompleteModel, ollama.embeddingModel].filter { !installedNames.contains($0) }
+        // Compared by normalized reference: the catalog publishes `llava` and a
+        // local inventory reports `llava:latest`, and Ollama resolves both.
+        let installedKeys = Set(installedModels.filter { $0.runtime == .ollama }.map { OllamaModelReference.key($0.name) })
+        return [ollama.chatModel, ollama.autocompleteModel, ollama.embeddingModel].filter { !installedKeys.contains(OllamaModelReference.key($0)) }
     }
 
     func validationIssues(for id: ServiceID) -> [ConfigurationIssue] {
@@ -150,31 +152,6 @@ final class ServiceManager: ObservableObject {
             if assessment.requiresConfirmation { warnings.append(.init(serviceID: id, message: "\(serviceName(id)): \(assessment.message)")) }
             return warnings
         }
-    }
-
-    static func launchArguments(id: ServiceID, script: URL, modelChoice: String?, configuration: ServiceLaunchConfiguration) -> [String] {
-        var arguments = [script.path]
-        if id != .ollama { arguments += ["--model", modelChoice!] }
-        arguments += ["--bind", configuration.bindMode.rawValue]
-        if id == .ollama { arguments += ["--port", String(configuration.port)] }
-        arguments += ["--no-install", "--no-tailscale-up"]
-        if configuration.downloadPolicy == .cachedOnly { arguments.append(id == .ollama ? "--no-pull" : "--offline") }
-        return arguments
-    }
-
-    static func launchEnvironment(id: ServiceID, configuration: ServiceLaunchConfiguration, base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
-        var environment = base; environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-        if let llama = configuration.llama {
-            let prefix: String
-            switch id { case .llamaChat: prefix = "LLAMA_CHAT"; case .autocomplete: prefix = "LLAMA_AUTOCOMPLETE"; case .embeddings: prefix = "LLAMA_EMBEDDING"; case .ollama: prefix = "" }
-            environment["\(prefix)_PORT"] = String(configuration.port); environment["\(prefix)_REPO"] = llama.repository; environment["\(prefix)_FILE"] = llama.filename; environment["\(prefix)_ALIAS"] = llama.alias
-            environment["\(prefix)_CONTEXT"] = String(llama.contextSize); environment["LLAMA_GPU_LAYERS"] = String(llama.gpuLayers)
-        } else if let ollama = configuration.ollama {
-            environment["OLLAMA_PORT"] = String(configuration.port); environment["OLLAMA_CHAT_MODEL"] = ollama.chatModel; environment["OLLAMA_AUTOCOMPLETE_MODEL"] = ollama.autocompleteModel; environment["OLLAMA_EMBEDDING_MODEL"] = ollama.embeddingModel
-            environment["OLLAMA_FLASH_ATTENTION"] = ollama.flashAttention ? "1" : "0"; environment["OLLAMA_KV_CACHE_TYPE"] = ollama.kvCacheType; environment["OLLAMA_CONTEXT_LENGTH"] = String(ollama.contextLength)
-            environment["OLLAMA_NUM_PARALLEL"] = String(ollama.parallelRequests); environment["OLLAMA_MAX_LOADED_MODELS"] = String(ollama.maxLoadedModels)
-        }
-        return environment
     }
 
     static func effectiveBindMode(configured: BindMode, override: BindMode?) -> BindMode {
@@ -224,7 +201,7 @@ final class ServiceManager: ObservableObject {
         do { handle = try FileHandle(forWritingTo: logURL(id)); try handle.seekToEnd() } catch { fail(index, "Could not open the service log.", error.localizedDescription); return }
         outputHandles[id] = handle
         let process = processFactory.makeProcess(); process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = Self.launchArguments(id: id, script: script, modelChoice: definition.modelChoice, configuration: config); process.environment = Self.launchEnvironment(id: id, configuration: config)
+        process.arguments = LaunchInvocation.arguments(id: id, script: script, modelChoice: definition.modelChoice, configuration: config); process.environment = LaunchInvocation.environment(id: id, configuration: config)
         process.standardOutput = handle; process.standardError = handle
         append(id, "Launcher: /bin/bash \(process.arguments?.joined(separator: " ") ?? "")")
         process.terminationHandler = { [weak self] ended in Task { @MainActor in self?.handleTermination(id, status: ended.terminationStatus, reason: ended.terminationReason) } }
@@ -275,7 +252,7 @@ final class ServiceManager: ObservableObject {
         let defaults = ServiceLaunchConfiguration.defaultValue(for: serviceID).llama
         return defaults?.repository == llama.repository && defaults?.filename == llama.filename ? definition(for: serviceID)?.estimatedBytes : nil
     }
-    private func ollamaModelSize(_ name: String) -> Int64? { installedModels.first(where: { $0.runtime == .ollama && $0.name == name })?.sizeBytes ?? recommendationMetadata.first(where: { $0.modelName == name })?.sizeBytes }
+    private func ollamaModelSize(_ name: String) -> Int64? { installedModels.first { $0.runtime == .ollama && OllamaModelReference.key($0.name) == OllamaModelReference.key(name) }?.sizeBytes ?? recommendationMetadata.first { $0.modelName.map { OllamaModelReference.key($0) == OllamaModelReference.key(name) } == true }?.sizeBytes }
     private static func loadConfigurations(from defaults: UserDefaults) -> [ServiceID: ServiceLaunchConfiguration]? { guard let data = defaults.data(forKey: configurationKey), let stored = try? JSONDecoder().decode([String: ServiceLaunchConfiguration].self, from: data) else { return nil }; return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in ServiceID(rawValue: key).map { ($0, value) } }) }
     private func persistConfigurations() { let stored = Dictionary(uniqueKeysWithValues: configurations.map { ($0.key.rawValue, $0.value) }); if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.configurationKey) } }
     private func ensureLog(_ id: ServiceID) { try? fileManager.createDirectory(at: probe.supportDirectory, withIntermediateDirectories: true); if !fileManager.fileExists(atPath: logURL(id).path) { fileManager.createFile(atPath: logURL(id).path, contents: nil) } }

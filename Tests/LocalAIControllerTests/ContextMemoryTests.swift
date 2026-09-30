@@ -61,7 +61,7 @@ final class ContextMemoryManagerTests: XCTestCase {
     }
 
     func testKnownInstalledCustomModelGetsVerifiedAssessment() {
-        let model = DiscoveredModel(runtime: .llamaCpp, name: "custom", repository: "owner/repo", filename: "model.gguf", sizeBytes: 2_000_000_000, roleHint: .chat)
+        let model = DiscoveredModel(runtime: .llamaCpp, name: "custom", repository: "owner/repo", filename: "model.gguf", sizeBytes: 2_000_000_000, roleHint: .chat, supportsVision: false)
         let (manager, _, _) = makeManager(models: [model])
         var config = manager.configuration(for: .llamaChat)
         config.llama?.repository = "owner/repo"

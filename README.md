@@ -144,8 +144,28 @@ most once per day and also provides a manual **Check Now** button.
 
 Only models with complete metadata, a known llama.cpp-compatible architecture,
 and a conservative fit for this Mac can be labeled **Compatible**. Unknown,
-oversized, gated, cloud-only, or unsupported multimodal models are rejected or
-shown as **Unverified**.
+oversized, and gated models are shown as **Unverified**. Cloud-only and
+multimodal models are rejected and stay visible in the list with the reason.
+
+Capability comes from signals that are actually read:
+
+- **Hugging Face** — the model's `pipeline_tag` and tags, plus any `mmproj`
+  projector file in a downloaded snapshot.
+- **Ollama library** — the capability badges rendered on the library page
+  (`vision`, `audio`, `embedding`, `tools`, `thinking`, `cloud`). Badge sizes
+  such as `27b` are parameter counts, not byte sizes.
+- **Installed Ollama models** — the projector manifest layer Ollama writes for
+  vision models. This check needs no network access.
+
+Models this controller manages are text-only, so an installed multimodal model
+is reported as **Multimodal (not supported)** and is not offered in a launch
+picker. A model already saved in a configuration is still listed, so switching
+to a supported model is always possible.
+
+Ollama model names are matched with the tag normalized for comparison only:
+the library publishes `llava` while a local inventory reports `llava:latest`,
+and both resolve to the same model. Saved configuration values are never
+rewritten.
 
 Recommendations are informational only. They do not include download, install,
 or launch actions.

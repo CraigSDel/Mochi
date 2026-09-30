@@ -49,3 +49,39 @@ struct StubRecommendationProvider: RecommendationProvider {
     let result: Result<[ModelRecommendation], Error>
     func fetch() async throws -> [ModelRecommendation] { try result.get() }
 }
+
+/// Records every requested URL and answers from a caller-supplied table so
+/// provider behaviour can be asserted without touching the network.
+final class StubFetcher: HTTPFetching, @unchecked Sendable {
+    private let lock = NSLock()
+    private var responses: [String: Result<HTTPResponse, Error>] = [:]
+    private(set) var requestedPaths: [String] = []
+    private(set) var timeouts: [TimeInterval] = []
+
+    init() {}
+
+    func stub(pathSuffix: String, data: Data = Data(), statusCode: Int = 200) {
+        lock.withLock { responses[pathSuffix] = .success(HTTPResponse(data: data, statusCode: statusCode)) }
+    }
+
+    func stubFailure(pathSuffix: String) {
+        lock.withLock { responses[pathSuffix] = .failure(URLError(.timedOut)) }
+    }
+
+    func requestCount(matching pathSuffix: String) -> Int {
+        lock.withLock { requestedPaths.filter { $0.hasSuffix(pathSuffix) }.count }
+    }
+
+    func fetch(_ url: URL, timeout: TimeInterval) async throws -> HTTPResponse {
+        lock.withLock {
+            requestedPaths.append(url.path)
+            timeouts.append(timeout)
+        }
+        let match = lock.withLock { responses.first { url.path.hasSuffix($0.key) }?.value }
+        switch match {
+        case .success(let response): return response
+        case .failure(let error): throw error
+        case nil: throw URLError(.badURL)
+        }
+    }
+}
