@@ -1,5 +1,20 @@
 # Local AI Controller — Swift/macOS
 
+## Reusable Swift architecture guidance
+
+For Swift feature creation or refactoring, apply the project-local
+`skills/clean-architecture-swift/SKILL.md` guidance: Clean Architecture and
+MVVM, protocol-based dependency inversion, modern concurrency, explicit domain
+errors, and isolated tests. Treat it as a design guide within this repository's
+established `Sources/LocalAIController` layout; the rules below for macOS
+lifecycle, security, persistence compatibility, and file size take precedence
+where they are more specific.
+
+For architecture-focused test creation or review, also apply
+`skills/swift-architecture-quality/SKILL.md`. Use static boundary checks only
+when the repository has corresponding layered source roots, and keep all tests
+compatible with the existing SwiftPM target and test conventions.
+
 Standards: [`docs/swift-style.md`](docs/swift-style.md) ·
 [`docs/architecture.md`](docs/architecture.md) ·
 [`docs/swiftui.md`](docs/swiftui.md) ·

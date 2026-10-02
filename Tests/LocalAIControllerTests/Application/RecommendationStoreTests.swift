@@ -2,7 +2,7 @@ import XCTest
 @testable import LocalAIController
 
 @MainActor
-final class RecommendationStoreResilienceTests: XCTestCase {
+final class RecommendationStoreTests: XCTestCase {
     func testCompleteProviderFailureRetainsCacheAndDoesNotAdvanceLastChecked() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
