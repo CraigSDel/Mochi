@@ -155,6 +155,7 @@ struct ServiceConfigurationEditor: View {
                         .buttonStyle(AppleSecondaryButtonStyle()).help("Rescan downloaded models")
                 }
                 if configuration.llama != nil { llamaFields } else if configuration.ollama != nil { ollamaFields }
+                contextLengthControl
             }
             .disabled(locked)
             .appCard()
@@ -201,7 +202,6 @@ struct ServiceConfigurationEditor: View {
     }
     private var llamaAdvanced: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ContextSizeSlider(value: llamaBinding(\.contextSize), assessment: manager.memoryAssessment(for: serviceID))
             ConfigurationField("GPU layers") {
                 styledNumberField("GPU layers", value: llamaBinding(\.gpuLayers))
             }
@@ -223,7 +223,6 @@ struct ServiceConfigurationEditor: View {
     }
     private var ollamaAdvanced: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ContextSizeSlider(value: ollamaBinding(\.contextLength), assessment: manager.memoryAssessment(for: serviceID))
             Toggle("Flash attention", isOn: ollamaBinding(\.flashAttention))
             ConfigurationField("KV cache type") {
                 TextField("KV cache type", text: ollamaBinding(\.kvCacheType))
@@ -268,6 +267,20 @@ struct ServiceConfigurationEditor: View {
             copy.ollama![keyPath: keyPath] = option.name
             manager.updateConfiguration(copy, for: serviceID)
         }
+    }
+    @ViewBuilder
+    private var contextLengthControl: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if configuration.llama != nil {
+                ContextSizeSlider(value: llamaBinding(\.contextSize), assessment: manager.memoryAssessment(for: serviceID))
+            } else if configuration.ollama != nil {
+                ContextSizeSlider(value: ollamaBinding(\.contextLength), assessment: manager.memoryAssessment(for: serviceID))
+            }
+            Text("Increase this when a request exceeds the current context limit. Larger values use more memory.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 4)
     }
     private func commonBinding<Value>(_ keyPath: WritableKeyPath<ServiceLaunchConfiguration, Value>) -> Binding<Value> {
         Binding(get: { configuration[keyPath: keyPath] }, set: { value in var copy = configuration; copy[keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
