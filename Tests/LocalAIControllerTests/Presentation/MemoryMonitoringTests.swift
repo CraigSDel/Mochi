@@ -1,5 +1,6 @@
 import XCTest
 import Darwin
+import AppKit
 @testable import LocalAIController
 
 @MainActor
@@ -26,6 +27,55 @@ final class MemoryMonitoringTests: XCTestCase {
 
         XCTAssertEqual(monitor.samples.count, 3)
         XCTAssertEqual(monitor.samples.map(\.timestamp.timeIntervalSince1970), [2, 3, 4])
+    }
+
+    func testMemoryTimelineSplitsSamplesAcrossSleepGap() {
+        let samples = [
+            memorySample(at: 1),
+            memorySample(at: 2),
+            memorySample(at: 20)
+        ]
+
+        XCTAssertEqual(MemoryTimeline.segments(samples: samples), [0, 0, 1])
+    }
+
+    func testMemoryTimelineKeepsNormallySpacedSamplesTogether() {
+        let samples = [
+            memorySample(at: 1),
+            memorySample(at: 2),
+            memorySample(at: 3)
+        ]
+
+        XCTAssertEqual(MemoryTimeline.segments(samples: samples), [0, 0, 0])
+    }
+
+    func testWakeCapturesFreshSampleWithoutClearingHistory() async {
+        let notificationCenter = NotificationCenter()
+        let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2)
+        let monitor = MemoryMonitor(probe: probe, wakeNotificationCenter: notificationCenter)
+
+        monitor.start(servicePIDs: { [:] })
+        probe.systemReading = .init(usedBytes: 2, totalBytes: 2)
+        notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertEqual(monitor.samples.count, 2)
+        XCTAssertEqual(monitor.samples.first?.systemUsedBytes, 1)
+        XCTAssertEqual(monitor.samples.last?.systemUsedBytes, 2)
+        monitor.stop()
+    }
+
+    func testStoppingMonitorRemovesWakeObserver() async {
+        let notificationCenter = NotificationCenter()
+        let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2)
+        let monitor = MemoryMonitor(probe: probe, wakeNotificationCenter: notificationCenter)
+
+        monitor.start(servicePIDs: { [:] })
+        monitor.stop()
+        notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertEqual(monitor.samples.count, 1)
     }
 
     func testUnavailableAndRestartedServicesDoNotLeaveStaleValues() {
@@ -154,6 +204,15 @@ final class MemoryMonitoringTests: XCTestCase {
             systemUsedBytes: 0,
             systemTotalBytes: 1,
             serviceBytes: [.llamaChat: managed]
+        )
+    }
+
+    private func memorySample(at timestamp: TimeInterval) -> MemorySample {
+        MemorySample(
+            timestamp: Date(timeIntervalSince1970: timestamp),
+            systemUsedBytes: 0,
+            systemTotalBytes: 1,
+            serviceBytes: [:]
         )
     }
 

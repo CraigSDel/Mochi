@@ -13,4 +13,13 @@ final class LaunchWarningDecisionTests: XCTestCase {
         XCTAssertFalse(LaunchWarningDecision.cancel.shouldStart)
         XCTAssertNil(LaunchWarningDecision.cancel.bindModeOverride)
     }
+
+    func testStartAllNetworkDecisionControlsLaunchAndMode() {
+        XCTAssertTrue(StartAllNetworkDecision.tailscale.shouldStart)
+        XCTAssertEqual(StartAllNetworkDecision.tailscale.bindMode, .tailscale)
+        XCTAssertTrue(StartAllNetworkDecision.localhost.shouldStart)
+        XCTAssertEqual(StartAllNetworkDecision.localhost.bindMode, .localhost)
+        XCTAssertFalse(StartAllNetworkDecision.cancel.shouldStart)
+        XCTAssertNil(StartAllNetworkDecision.cancel.bindMode)
+    }
 }

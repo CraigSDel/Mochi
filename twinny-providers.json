@@ -1,0 +1,39 @@
+{
+  "297fe84f-172d-46f1-baeb-4aa91f3c4fb4": {
+    "id": "297fe84f-172d-46f1-baeb-4aa91f3c4fb4",
+    "label": "llama CHAT",
+    "modelName": "Qwen3.8-27B",
+    "provider": "llamacpp",
+    "type": "chat",
+    "apiHostname": "localhost",
+    "apiPort": 11437,
+    "apiProtocol": "http",
+    "apiPath": "/v1",
+    "apiKey": ""
+  },
+  "2f55d391-0ab9-4d2e-ad65-ff2f674d63fb": {
+    "id": "2f55d391-0ab9-4d2e-ad65-ff2f674d63fb",
+    "label": "llama AUTOCOMPLETE",
+    "modelName": "qwen2.5-coder:1.5b",
+    "provider": "llamacpp",
+    "type": "fim",
+    "apiHostname": "localhost",
+    "apiPort": 11435,
+    "apiProtocol": "http",
+    "apiPath": "/completion",
+    "apiKey": "",
+    "fimTemplate": "automatic"
+  },
+  "ce7d0b84-e06f-41f6-a751-0a1f331feb6c": {
+    "id": "ce7d0b84-e06f-41f6-a751-0a1f331feb6c",
+    "label": "llama.cpp EMBEDDING",
+    "modelName": "nomic-embed-text",
+    "provider": "llamacpp",
+    "type": "embedding",
+    "apiHostname": "localhost",
+    "apiPort": 11436,
+    "apiProtocol": "http",
+    "apiPath": "/v1/embeddings",
+    "apiKey": ""
+  }
+}

@@ -7,6 +7,35 @@ enum LaunchWarningDecision: Equatable {
     var bindModeOverride: BindMode? { switch self { case .localhost: .localhost; case .lan: .lan; case .configured, .cancel: nil } }
 }
 
+enum StartAllNetworkDecision: Equatable {
+    case tailscale, localhost, cancel
+
+    var shouldStart: Bool { self != .cancel }
+    var bindMode: BindMode? {
+        switch self {
+        case .tailscale: .tailscale
+        case .localhost: .localhost
+        case .cancel: nil
+        }
+    }
+}
+
+@MainActor
+private func chooseStartAllNetworkMode() -> StartAllNetworkDecision {
+    let alert = NSAlert()
+    alert.alertStyle = .informational
+    alert.messageText = "Choose Start All network"
+    alert.informativeText = "Choose where the llama.cpp services should listen for this launch. Your saved per-service Network settings will not change."
+    alert.addButton(withTitle: "Start on Tailscale")
+    alert.addButton(withTitle: "Start Locally")
+    alert.addButton(withTitle: "Cancel")
+    switch alert.runModal() {
+    case .alertFirstButtonReturn: return .tailscale
+    case .alertSecondButtonReturn: return .localhost
+    default: return .cancel
+    }
+}
+
 @MainActor
 private func confirmWarnings(_ warnings: [LaunchWarning], offersLocalFallback: Bool, offersWiFiFallback: Bool) -> LaunchWarningDecision {
     guard !warnings.isEmpty else { return .configured }
@@ -67,13 +96,18 @@ func attemptStartAll(_ manager: ServiceManager) {
     let issues = manager.validationIssuesForStartAll(); guard issues.isEmpty else { showConfigurationErrors(issues); return }
     let ids = ServiceManager.startAllServiceIDs
     Task {
-        var warnings = manager.launchWarnings(for: ids)
-        let networkWarning = await manager.tailscaleLaunchWarning(for: ids)
+        let networkDecision = chooseStartAllNetworkMode()
+        guard networkDecision.shouldStart, let selectedMode = networkDecision.bindMode else { return }
+        var warnings = manager.launchWarnings(for: ids, bindModeOverride: selectedMode)
+        let networkWarning = await manager.tailscaleLaunchWarning(for: ids, bindModeOverride: selectedMode)
         if let networkWarning { warnings.append(networkWarning) }
         let offersWiFi = networkWarning != nil && manager.wifiIP() != nil
         let decision = confirmWarnings(warnings, offersLocalFallback: networkWarning != nil, offersWiFiFallback: offersWiFi)
         guard decision.shouldStart else { return }
         guard confirmRequiredDownloads(for: ids, manager: manager) else { return }
-        await manager.startAll(warningsAcknowledged: !warnings.isEmpty, bindModeOverride: decision.bindModeOverride)
+        await manager.startAll(
+            warningsAcknowledged: !warnings.isEmpty,
+            bindModeOverride: decision.bindModeOverride ?? selectedMode
+        )
     }
 }

@@ -92,8 +92,10 @@ final class ServiceManager: ObservableObject {
         return result
     }
 
-    func tailscaleLaunchWarning(for ids: [ServiceID]) async -> LaunchWarning? {
-        guard let serviceID = ids.first(where: { configuration(for: $0).bindMode == .tailscale }) else { return nil }
+    func tailscaleLaunchWarning(for ids: [ServiceID], bindModeOverride: BindMode? = nil) async -> LaunchWarning? {
+        guard let serviceID = ids.first(where: {
+            (bindModeOverride ?? configuration(for: $0).bindMode) == .tailscale
+        }) else { return nil }
         let diagnostic = await testTailscale()
         return diagnostic.launchWarning.map { .init(serviceID: serviceID, message: $0) }
     }
@@ -144,33 +146,52 @@ final class ServiceManager: ObservableObject {
         return issues
     }
 
-    func launchWarnings(for ids: [ServiceID]) -> [LaunchWarning] {
+    func launchWarnings(for ids: [ServiceID], bindModeOverride: BindMode? = nil) -> [LaunchWarning] {
         ids.flatMap { id -> [LaunchWarning] in
             let config = configuration(for: id); var warnings: [LaunchWarning] = []
-            if config.bindMode == .lan { warnings.append(.init(serviceID: id, message: "\(serviceName(id)) will expose an unauthenticated API to the local network.")) }
+            let bindMode = bindModeOverride ?? config.bindMode
+            if bindMode == .lan { warnings.append(.init(serviceID: id, message: "\(serviceName(id)) will expose an unauthenticated API to the local network.")) }
             let assessment = memoryAssessment(for: id)
             if assessment.requiresConfirmation { warnings.append(.init(serviceID: id, message: "\(serviceName(id)): \(assessment.message)")) }
             return warnings
         }
     }
 
-    static func effectiveBindMode(configured: BindMode, override: BindMode?) -> BindMode {
+    static func effectiveBindMode(configured: BindMode, override: BindMode?, overrideSavedMode: Bool = false) -> BindMode {
+        if overrideSavedMode, let override, override == .tailscale || override == .localhost { return override }
         guard configured == .tailscale, let override, override == .localhost || override == .lan else { return configured }
         return override
     }
 
     func startAll(warningsAcknowledged: Bool = false, bindModeOverride: BindMode? = nil) async {
         let ids = Self.startAllServiceIDs
-        guard validationIssuesForStartAll().isEmpty, warningsAcknowledged || launchWarnings(for: ids).isEmpty else { return }
-        for id in ids { await start(id, warningsAcknowledged: warningsAcknowledged, bindModeOverride: bindModeOverride) }
+        guard validationIssuesForStartAll().isEmpty,
+              warningsAcknowledged || launchWarnings(for: ids, bindModeOverride: bindModeOverride).isEmpty else { return }
+        for id in ids {
+            await start(
+                id,
+                warningsAcknowledged: warningsAcknowledged,
+                bindModeOverride: bindModeOverride,
+                overrideSavedMode: true
+            )
+        }
     }
     func stopAll() async { for id in [ServiceID.llamaChat, .autocomplete, .embeddings, .ollama] { await stop(id) } }
 
-    func start(_ id: ServiceID, warningsAcknowledged: Bool = false, bindModeOverride: BindMode? = nil) async {
+    func start(
+        _ id: ServiceID,
+        warningsAcknowledged: Bool = false,
+        bindModeOverride: BindMode? = nil,
+        overrideSavedMode: Bool = false
+    ) async {
         guard let index = services.firstIndex(where: { $0.id == id }) else { return }
         let definition = services[index].definition, savedConfig = configuration(for: id)
         var config = savedConfig
-        config.bindMode = Self.effectiveBindMode(configured: savedConfig.bindMode, override: bindModeOverride)
+        config.bindMode = Self.effectiveBindMode(
+            configured: savedConfig.bindMode,
+            override: bindModeOverride,
+            overrideSavedMode: overrideSavedMode
+        )
         guard validationIssues(for: id).isEmpty else { fail(index, "Launch configuration is invalid.", "Correct the highlighted fields and retry."); return }
         guard warningsAcknowledged || launchWarnings(for: [id]).isEmpty else { fail(index, "Launch confirmation is required.", "Review and acknowledge the network or custom-model warning."); return }
         ensureLog(id); append(id, "========== START ATTEMPT ==========")

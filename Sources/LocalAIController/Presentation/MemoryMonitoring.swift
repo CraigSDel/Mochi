@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Darwin
+import AppKit
 
 struct SystemMemoryReading: Equatable, Sendable {
     let usedBytes: UInt64
@@ -165,12 +166,19 @@ final class MemoryMonitor: ObservableObject {
 
     private let probe: any MemoryProbing
     private let maximumSampleCount: Int
+    private let wakeNotificationCenter: NotificationCenter
     private var timer: Timer?
+    private var wakeNotificationToken: NSObjectProtocol?
     private var serviceRootProvider: (() -> [ServiceID: ManagedProcessRoot])?
 
-    init(probe: any MemoryProbing = LiveSystemProbe(), maximumSampleCount: Int = 900) {
+    init(
+        probe: any MemoryProbing = LiveSystemProbe(),
+        maximumSampleCount: Int = 900,
+        wakeNotificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter
+    ) {
         self.probe = probe
         self.maximumSampleCount = max(1, maximumSampleCount)
+        self.wakeNotificationCenter = wakeNotificationCenter
     }
 
     func start(servicePIDs: @escaping () -> [ServiceID: Int32]) {
@@ -183,6 +191,7 @@ final class MemoryMonitor: ObservableObject {
         serviceRootProvider = serviceRoots
         captureOwnedRoots()
         guard timer == nil else { return }
+        installWakeObserver()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.captureOwnedRoots() }
         }
@@ -191,6 +200,10 @@ final class MemoryMonitor: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        if let wakeNotificationToken {
+            wakeNotificationCenter.removeObserver(wakeNotificationToken)
+            self.wakeNotificationToken = nil
+        }
         serviceRootProvider = nil
     }
 
@@ -208,6 +221,17 @@ final class MemoryMonitor: ObservableObject {
 
     private func captureOwnedRoots(at timestamp: Date = Date()) {
         capture(at: timestamp, serviceRoots: serviceRootProvider?() ?? [:])
+    }
+
+    private func installWakeObserver() {
+        guard wakeNotificationToken == nil else { return }
+        wakeNotificationToken = wakeNotificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.captureOwnedRoots() }
+        }
     }
 
     private func capture(at timestamp: Date, serviceRoots: [ServiceID: ManagedProcessRoot]) {

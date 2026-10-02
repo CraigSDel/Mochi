@@ -84,18 +84,20 @@ struct MemoryDashboardView: View {
     }
 
     private var systemChart: some View {
-        Chart {
-            ForEach(monitor.samples) { sample in
+        let samples = monitor.samples
+        let segments = MemoryTimeline.segments(samples: samples)
+        return Chart {
+            ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
                 AreaMark(
                     x: .value("Time", sample.timestamp),
                     y: .value("Memory", gibibytes(sample.systemUsedBytes)),
-                    series: .value("Series", "System")
+                    series: .value("Series", "System-\(segments[index])")
                 )
                 .foregroundStyle(AppTheme.accent.opacity(0.12))
                 LineMark(
                     x: .value("Time", sample.timestamp),
                     y: .value("Memory", gibibytes(sample.systemUsedBytes)),
-                    series: .value("Series", "System")
+                    series: .value("Series", "System-\(segments[index])")
                 )
                 .foregroundStyle(AppTheme.accent)
                 .lineStyle(.init(lineWidth: 2))
@@ -121,15 +123,17 @@ struct MemoryDashboardView: View {
     }
 
     private var managedChart: some View {
+        let samples = monitor.samples
+        let segments = MemoryTimeline.segments(samples: samples)
         let scale = ManagedMemoryChartScale(samples: monitor.samples)
         return Chart {
             ForEach(ServiceID.allCases) { serviceID in
-                ForEach(monitor.samples) { sample in
+                ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
                     if let bytes = sample.serviceBytes[serviceID] {
                         LineMark(
                             x: .value("Time", sample.timestamp),
                             y: .value("Memory", scale.value(for: bytes)),
-                            series: .value("Service", serviceID.rawValue)
+                            series: .value("Service", "\(serviceID.rawValue)-\(segments[index])")
                         )
                         .foregroundStyle(color(for: serviceID))
                         .lineStyle(.init(lineWidth: 1.7))
@@ -278,4 +282,3 @@ struct MemoryDashboardView: View {
         }
     }
 }
-

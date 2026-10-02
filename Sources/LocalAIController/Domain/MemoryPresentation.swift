@@ -28,6 +28,27 @@ struct ManagedMemoryChartScale {
     func value(for bytes: UInt64) -> Double { Double(bytes) / divisor }
 }
 
+enum MemoryTimeline {
+    static let expectedSampleInterval: TimeInterval = 1
+    static let maximumContiguousGap = expectedSampleInterval * 2
+
+    static func segments(
+        samples: [MemorySample],
+        maximumGap: TimeInterval = maximumContiguousGap
+    ) -> [Int] {
+        guard !samples.isEmpty else { return [] }
+
+        var segment = 0
+        var result = [segment]
+        for index in samples.indices.dropFirst() {
+            let gap = samples[index].timestamp.timeIntervalSince(samples[index - 1].timestamp)
+            if gap > maximumGap { segment += 1 }
+            result.append(segment)
+        }
+        return result
+    }
+}
+
 enum MemoryFormatting {
     static func bytes(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .memory)
