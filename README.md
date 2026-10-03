@@ -1,5 +1,8 @@
 # Local AI Controller
 
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-0B83FF?style=flat-square&logo=apple&labelColor=141414)
+![Swift 6](https://img.shields.io/badge/Swift-6.0-FA7343?style=flat-square&logo=swift&labelColor=141414)
+
 Local AI Controller is a native macOS menu-bar and desktop application for
 starting, stopping, and monitoring the local model services configured in this
 repository.
@@ -10,6 +13,36 @@ The app manages:
 - Qwen code autocomplete through `llama.cpp`
 - Nomic workspace embeddings through `llama.cpp`
 - Ollama and its configured local models
+
+## Table of contents
+
+- [Screenshots](#screenshots)
+- [Requirements](#requirements)
+- [Build the app](#build-the-app)
+- [Open the app](#open-the-app)
+- [Use the controller](#use-the-controller)
+- [Launch configuration](#launch-configuration)
+- [Model recommendations](#model-recommendations)
+- [Data locations](#data-locations)
+- [Repository structure](#repository-structure)
+- [Development](#development)
+- [Documentation](#documentation)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+
+## Screenshots
+
+The controller exposes the llama.cpp and Ollama endpoints over your chosen
+network binding. The screenshots below show the supported clients pointed at
+those endpoints while the services are running.
+
+| Cline (chat) | Twinny (chat) |
+| --- | --- |
+| ![Cline API configuration pointed at the llama.cpp chat endpoint.](cline_chat.png) | ![Twinny chat provider pointed at the llama.cpp endpoint.](twinny_chat.png) |
+
+| Twinny (autocomplete) | Twinny (embeddings) |
+| --- | --- |
+| ![Twinny autocomplete (FIM) provider for the code-completion service.](twinny_autocomplete.png) | ![Twinny embeddings provider for the Nomic workspace-embedding service.](twinny_embedding.png) |
 
 ## Requirements
 
@@ -181,6 +214,45 @@ Service logs, process records, and the recommendation cache are stored under:
 Per-service launch profiles and app preferences are stored through macOS user
 defaults.
 
+## Repository structure
+
+```text
+Sources/LocalAIController/     SwiftUI + AppKit application code
+Tests/LocalAIControllerTests/  Unit and integration-style tests with fakes
+AppResources/                  Info.plist and application icon
+docs/                          Architecture, style, and workflow guides
+start_llama_network.sh         llama.cpp launcher
+start_ollama_network.sh        Ollama launcher
+build_app.sh                   Release build and app-bundle packaging
+check_code_line_lengths.sh     300-line authored-file quality gate
+```
+
+## Development
+
+The package is built and tested with Swift Package Manager:
+
+```bash
+swift build                    # build the app
+swift test                     # run the test suite
+./check_code_line_lengths.sh   # 300-line authored-file quality gate
+```
+
+Run `swift test --filter <TestClassName>` to iterate on a focused test. `./build_app.sh` (see [Build the app](#build-the-app)) produces the signed `dist/Local AI Controller.app` bundle.
+
+## Documentation
+
+Detailed guidance lives in [`docs/`](docs/):
+
+- [`architecture.md`](docs/architecture.md) — MVVM + Clean Architecture layout and dependency boundaries.
+- [`swift-style.md`](docs/swift-style.md) — Swift and file-size conventions.
+- [`swiftui.md`](docs/swiftui.md) — SwiftUI/AppKit and theming rules.
+- [`service-lifecycle.md`](docs/service-lifecycle.md) — service state machine and process-ownership safety.
+- [`security-and-networking.md`](docs/security-and-networking.md) — bind modes and exposure controls.
+- [`testing.md`](docs/testing.md) — test conventions and pre-handoff gates.
+- [`agentic-workflows.md`](docs/agentic-workflows.md) — how agents should work in this repository.
+
+`how_to.md` covers network and editor client setup in more depth.
+
 ## Troubleshooting
 
 - **Runtime not installed:** Install the named dependency outside the app and
@@ -203,3 +275,10 @@ checking dependencies, ports, memory, disk space, or Tailscale. Earlier attempts
 remain available after a retry or app relaunch.
 
 For the detailed network and editor configuration, see [how_to.md](how_to.md).
+
+## License
+
+This repository is not currently under an explicit license. Copyright remains
+with its author, and no rights beyond local, personal use are granted. If you
+want to publish or share it, add a `LICENSE` file and update this section to
+name the chosen license.

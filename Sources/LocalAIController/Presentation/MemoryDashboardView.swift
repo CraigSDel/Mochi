@@ -69,15 +69,10 @@ struct MemoryDashboardView: View {
 
     private var charts: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("System memory")
+            Text("System memory usage")
                 .font(.subheadline.weight(.semibold))
-                systemChart
-                    .frame(height: 104)
-
-            Text("Reconciled memory composition")
-                .font(.subheadline.weight(.semibold))
-            managedChart
-                .frame(height: 164)
+            memoryChart
+                .frame(height: 220)
 
             Text("Service footprints are included in total system usage. Other system usage represents macOS, background applications, caches, and untracked processes not attributed to controller-owned process trees.")
                 .font(.caption2)
@@ -90,68 +85,27 @@ struct MemoryDashboardView: View {
         }
     }
 
-    private var systemChart: some View {
+    private var memoryChart: some View {
         let samples = monitor.samples
-        let segments = MemoryTimeline.segments(samples: samples)
+        let timeline = MemoryChartTimeline.samples(from: samples, maximumGap: .infinity)
         let scale = MemoryChartScale(samples: samples)
         return Chart {
-            ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
-                AreaMark(
-                    x: .value("Time", sample.timestamp),
-                    y: .value("Memory", scale.value(for: sample.systemUsedBytes)),
-                    series: .value("Series", "System-\(segments[index])")
-                )
-                .foregroundStyle(AppTheme.accent.opacity(0.12))
-                LineMark(
-                    x: .value("Time", sample.timestamp),
-                    y: .value("Memory", scale.value(for: sample.systemUsedBytes)),
-                    series: .value("Series", "System-\(segments[index])")
-                )
-                .foregroundStyle(AppTheme.accent)
-                .lineStyle(.init(lineWidth: 2))
-            }
-            if let sample = monitor.currentSample {
-                PointMark(
-                    x: .value("Latest time", sample.timestamp),
-                    y: .value("Latest memory", scale.value(for: sample.systemUsedBytes))
-                )
-                .symbolSize(42)
-                .foregroundStyle(AppTheme.accent)
-            }
-            latestRule
-            selectionRule
-        }
-        .chartXScale(domain: timeRange)
-        .chartYScale(domain: 0...scale.upperBound)
-        .chartYAxisLabel("GiB")
-        .chartXAxis(.hidden)
-        .chartYAxis { yAxis }
-        .chartOverlay { proxy in selectionOverlay(proxy) }
-        .accessibilityLabel("System memory over the last 15 minutes")
-    }
-
-    private var managedChart: some View {
-        let samples = monitor.samples
-        let segments = MemoryTimeline.segments(samples: samples)
-        let scale = MemoryChartScale(samples: samples)
-        return Chart {
-            ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
-                ForEach(Array(sample.composition.segments.enumerated()), id: \.element.id) { segmentIndex, segment in
-                    let start = sample.composition.segments.prefix(segmentIndex).reduce(UInt64(0)) { $0 + $1.bytes }
-                    AreaMark(
-                        x: .value("Time", sample.timestamp),
-                        yStart: .value("Start", scale.value(for: start)),
-                        yEnd: .value("Memory", scale.value(for: start + segment.bytes)),
-                        series: .value("Composition", "\(segment.id)-\(segments[index])")
+            ForEach(timeline) { chartSample in
+                ForEach(chartSample.segments.filter(\.isMeasured)) { segment in
+                    LineMark(
+                        x: .value("Time", chartSample.timestamp),
+                        y: .value("Memory", scale.value(for: segment.bytes)),
+                        series: .value("Memory source", segment.id)
                     )
-                    .foregroundStyle(segment.serviceID.map(color(for:)) ?? .gray.opacity(0.55))
+                    .foregroundStyle(segment.serviceID.map(color(for:)) ?? .gray)
+                    .lineStyle(.init(lineWidth: 1.5))
                 }
             }
-            ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
+            ForEach(timeline) { chartSample in
                 LineMark(
-                    x: .value("Time", sample.timestamp),
-                    y: .value("Total system used", scale.value(for: sample.systemUsedBytes)),
-                    series: .value("Total", "Total-\(segments[index])")
+                    x: .value("Time", chartSample.timestamp),
+                    y: .value("Total system used", scale.value(for: chartSample.totalSystemUsedBytes)),
+                    series: .value("Memory source", "total")
                 )
                 .foregroundStyle(AppTheme.accent)
                 .lineStyle(.init(lineWidth: 2))
@@ -170,7 +124,7 @@ struct MemoryDashboardView: View {
         }
         .chartYAxis { yAxis }
         .chartOverlay { proxy in selectionOverlay(proxy) }
-        .accessibilityLabel("Reconciled system memory composition over the last 15 minutes")
+        .accessibilityLabel("System memory usage over the last 15 minutes")
     }
 
     @ChartContentBuilder

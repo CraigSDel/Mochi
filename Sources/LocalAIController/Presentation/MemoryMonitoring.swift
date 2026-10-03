@@ -251,7 +251,7 @@ final class MemoryMonitor: ObservableObject {
             return (id, reading)
         })
         samples.append(.init(
-            timestamp: timestamp,
+            timestamp: nextSampleTimestamp(after: timestamp),
             systemUsedBytes: system.usedBytes,
             systemTotalBytes: system.totalBytes,
             serviceReadings: readings
@@ -259,5 +259,13 @@ final class MemoryMonitor: ObservableObject {
         if samples.count > maximumSampleCount {
             samples.removeFirst(samples.count - maximumSampleCount)
         }
+    }
+
+    private func nextSampleTimestamp(after timestamp: Date) -> Date {
+        guard let previous = samples.last?.timestamp else { return timestamp }
+        guard timestamp > previous else {
+            return previous.addingTimeInterval(0.001)
+        }
+        return timestamp
     }
 }
