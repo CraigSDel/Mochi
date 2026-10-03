@@ -101,7 +101,6 @@ enum PerformanceGuidanceBuilder {
         physicalMemory: UInt64,
         defaultLlamaConfiguration: LlamaLaunchConfiguration?,
         defaultLlamaSize: Int64?,
-        defaultOllamaConfiguration: OllamaLaunchConfiguration?,
         defaultOllamaSize: Int64?
     ) -> [PerformanceGuidance] {
         let llama = configurations[.llamaChat]?.llama.flatMap { configuration in
@@ -121,19 +120,21 @@ enum PerformanceGuidanceBuilder {
             )
         }
         let ollama = configurations[.ollama]?.ollama.map { configuration in
-            let names = [configuration.chatModel, configuration.autocompleteModel, configuration.embeddingModel]
-            let sizes = names.map { modelSize($0, installedModels: installedModels, recommendations: recommendations) }
-            let bytes = sizes.allSatisfy { $0 != nil }
-                ? sizes.compactMap { $0 }
-                : (configuration == defaultOllamaConfiguration ? defaultOllamaSize.map { [$0] } : nil)
+            let selection = OllamaMemoryModelSelection.resolve(
+                configuration: configuration,
+                installedModels: installedModels,
+                recommendations: recommendations,
+                isDefaultConfiguration: configurations[.ollama] == .defaultValue(for: .ollama),
+                defaultSize: defaultOllamaSize
+            )
             return PerformanceGuidance.make(
                 runtime: .ollama,
                 modelLabel: configuration.chatModel,
-                modelBytes: bytes,
+                modelBytes: selection.modelBytes,
                 quantization: nil,
                 contextSize: configuration.contextLength,
                 parallelRequests: configuration.parallelRequests,
-                loadedModelCount: min(max(configuration.maxLoadedModels, 1), names.count),
+                loadedModelCount: selection.loadedModelCount,
                 kvCacheType: configuration.kvCacheType,
                 physicalMemory: physicalMemory
             )
@@ -153,12 +154,44 @@ enum PerformanceGuidanceBuilder {
             ?? (defaultConfiguration?.repository == configuration.repository && defaultConfiguration?.filename == configuration.filename ? defaultSize : nil)
     }
 
+}
+
+struct OllamaMemoryModelSelection: Equatable, Sendable {
+    let modelBytes: [Int64]?
+    let loadedModelCount: Int
+
+    static func resolve(
+        configuration: OllamaLaunchConfiguration,
+        installedModels: [DiscoveredModel],
+        recommendations: [ModelRecommendation],
+        isDefaultConfiguration: Bool,
+        defaultSize: Int64?
+    ) -> Self {
+        let namesByKey = [configuration.chatModel, configuration.autocompleteModel, configuration.embeddingModel]
+            .reduce(into: [String: String]()) { result, name in
+                result[OllamaModelReference.key(name), default: name] = name
+            }
+        let names = Array(namesByKey.values)
+        let loadedModelCount = min(max(configuration.maxLoadedModels, 1), names.count)
+        let resolvedSizes = names.map { modelSize($0, installedModels: installedModels, recommendations: recommendations) }
+        let modelBytes: [Int64]?
+        if resolvedSizes.allSatisfy({ $0 != nil }) {
+            modelBytes = resolvedSizes.compactMap { $0 }.sorted(by: >).prefix(loadedModelCount).map { $0 }
+        } else if isDefaultConfiguration, let defaultSize {
+            modelBytes = [defaultSize]
+        } else {
+            modelBytes = nil
+        }
+        return .init(modelBytes: modelBytes, loadedModelCount: loadedModelCount)
+    }
+
     private static func modelSize(
         _ name: String,
         installedModels: [DiscoveredModel],
         recommendations: [ModelRecommendation]
     ) -> Int64? {
-        installedModels.first { $0.runtime == .ollama && OllamaModelReference.key($0.name) == OllamaModelReference.key(name) }?.sizeBytes
-            ?? recommendations.first { $0.modelName.map { OllamaModelReference.key($0) == OllamaModelReference.key(name) } == true }?.sizeBytes
+        let key = OllamaModelReference.key(name)
+        return installedModels.first { $0.runtime == .ollama && OllamaModelReference.key($0.name) == key }?.sizeBytes
+            ?? recommendations.first { $0.modelName.map { OllamaModelReference.key($0) == key } == true }?.sizeBytes
     }
 }

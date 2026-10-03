@@ -52,4 +52,19 @@ final class ContextMemoryManagerTests: XCTestCase {
         manager.updateConfiguration(custom, for: .autocomplete)
         XCTAssertTrue(manager.launchWarnings(for: [.autocomplete]).contains { $0.message.contains("unverified") })
     }
+
+    func testOllamaGuidanceMatchesLaunchAssessment() {
+        let models = [
+            DiscoveredModel(runtime: .ollama, name: "qwen3:27b", repository: nil, filename: nil, sizeBytes: 16 * 1_073_741_824, roleHint: .chat, supportsVision: false),
+            DiscoveredModel(runtime: .ollama, name: "qwen2.5-coder:1.5b", repository: nil, filename: nil, sizeBytes: 2 * 1_073_741_824, roleHint: .chat, supportsVision: false),
+            DiscoveredModel(runtime: .ollama, name: "nomic-embed-text:v1.5", repository: nil, filename: nil, sizeBytes: 1 * 1_073_741_824, roleHint: .embedding, supportsVision: false)
+        ]
+        let (manager, _, _) = makeManager(models: models)
+        var configuration = manager.configuration(for: .ollama)
+        configuration.ollama?.maxLoadedModels = 1
+        manager.updateConfiguration(configuration, for: .ollama)
+
+        let guidance = manager.performanceGuidance().first { $0.runtime == .ollama }
+        XCTAssertEqual(guidance?.severity.rawValue, manager.memoryAssessment(for: .ollama).severity.rawValue)
+    }
 }

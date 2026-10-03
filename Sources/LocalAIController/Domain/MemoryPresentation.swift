@@ -8,7 +8,14 @@ struct MemoryChartScale {
     init(samples: [MemorySample]) {
         divisor = 1_073_741_824
         unit = "GiB"
-        let maximumBytes = samples.map(\.systemUsedBytes).max() ?? 0
+        let maximumSystemBytes = samples.map(\.systemUsedBytes).max() ?? 0
+        let maximumCompositionBytes = samples.map { sample in
+            sample.composition.segments.reduce(UInt64(0)) { total, segment in
+                let (sum, overflow) = total.addingReportingOverflow(segment.bytes)
+                return overflow ? .max : sum
+            }
+        }.max() ?? 0
+        let maximumBytes = max(maximumSystemBytes, maximumCompositionBytes)
         upperBound = max(1, Double(maximumBytes) / divisor * 1.1)
     }
 

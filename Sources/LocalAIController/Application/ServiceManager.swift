@@ -71,23 +71,21 @@ final class ServiceManager: ObservableObject {
             return ControllerPolicy.memoryAssessment(modelBytes: llamaModelSize(llama, serviceID: id).map { [$0] }, contextSize: llama.contextSize, physicalMemory: probe.physicalMemory)
         }
         guard let ollama = config.ollama else { return ControllerPolicy.memoryAssessment(modelBytes: nil, contextSize: 0, physicalMemory: probe.physicalMemory) }
-        let names = Array(Set([ollama.chatModel, ollama.autocompleteModel, ollama.embeddingModel]))
-        let loadedCount = min(max(ollama.maxLoadedModels, 1), names.count)
-        let resolvedSizes = names.map(ollamaModelSize)
-        let sizes: [Int64]?
-        if resolvedSizes.allSatisfy({ $0 != nil }) {
-            sizes = resolvedSizes.compactMap { $0 }.sorted(by: >).prefix(loadedCount).map { $0 }
-        } else if config == ServiceLaunchConfiguration.defaultValue(for: .ollama), let fallback = definition(for: id)?.estimatedBytes {
-            sizes = [fallback]
-        } else { sizes = nil }
-        return ControllerPolicy.memoryAssessment(modelBytes: sizes, contextSize: ollama.contextLength, parallelRequests: ollama.parallelRequests, loadedModelCount: loadedCount, physicalMemory: probe.physicalMemory)
+        let selection = OllamaMemoryModelSelection.resolve(
+            configuration: ollama,
+            installedModels: installedModels,
+            recommendations: recommendationMetadata,
+            isDefaultConfiguration: config == .defaultValue(for: .ollama),
+            defaultSize: definition(for: id)?.estimatedBytes
+        )
+        return ControllerPolicy.memoryAssessment(modelBytes: selection.modelBytes, contextSize: ollama.contextLength, parallelRequests: ollama.parallelRequests, loadedModelCount: selection.loadedModelCount, physicalMemory: probe.physicalMemory)
     }
     func performanceGuidance() -> [PerformanceGuidance] {
         PerformanceGuidanceBuilder.make(
             configurations: configurations, installedModels: installedModels,
             recommendations: recommendationMetadata, physicalMemory: probe.physicalMemory,
             defaultLlamaConfiguration: ServiceLaunchConfiguration.defaultValue(for: .llamaChat).llama, defaultLlamaSize: definition(for: .llamaChat)?.estimatedBytes,
-            defaultOllamaConfiguration: ServiceLaunchConfiguration.defaultValue(for: .ollama).ollama, defaultOllamaSize: definition(for: .ollama)?.estimatedBytes
+            defaultOllamaSize: definition(for: .ollama)?.estimatedBytes
         )
     }
     @discardableResult
@@ -281,7 +279,6 @@ final class ServiceManager: ObservableObject {
         let defaults = ServiceLaunchConfiguration.defaultValue(for: serviceID).llama
         return defaults?.repository == llama.repository && defaults?.filename == llama.filename ? definition(for: serviceID)?.estimatedBytes : nil
     }
-    private func ollamaModelSize(_ name: String) -> Int64? { installedModels.first { $0.runtime == .ollama && OllamaModelReference.key($0.name) == OllamaModelReference.key(name) }?.sizeBytes ?? recommendationMetadata.first { $0.modelName.map { OllamaModelReference.key($0) == OllamaModelReference.key(name) } == true }?.sizeBytes }
     private static func loadConfigurations(from defaults: UserDefaults) -> [ServiceID: ServiceLaunchConfiguration]? { guard let data = defaults.data(forKey: configurationKey), let stored = try? JSONDecoder().decode([String: ServiceLaunchConfiguration].self, from: data) else { return nil }; return Dictionary(uniqueKeysWithValues: stored.compactMap { key, value in ServiceID(rawValue: key).map { ($0, value) } }) }
     private func persistConfigurations() { let stored = Dictionary(uniqueKeysWithValues: configurations.map { ($0.key.rawValue, $0.value) }); if let data = try? JSONEncoder().encode(stored) { defaults.set(data, forKey: Self.configurationKey) } }
     private func ensureLog(_ id: ServiceID) { try? fileManager.createDirectory(at: probe.supportDirectory, withIntermediateDirectories: true); if !fileManager.fileExists(atPath: logURL(id).path) { fileManager.createFile(atPath: logURL(id).path, contents: nil) } }
