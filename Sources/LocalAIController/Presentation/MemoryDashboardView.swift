@@ -18,13 +18,14 @@ struct MemoryDashboardView: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeading(
                     "Live memory",
-                    subtitle: "A 15-minute view of system and managed model memory.",
+                    subtitle: "A 15-minute view of total system usage and its measured composition.",
                     symbol: "memorychip"
                 )
                 if let sample = monitor.currentSample {
                     HStack(spacing: 20) {
                         metric("Latest system", MemoryFormatting.usage(sample.systemUsedBytes, of: sample.systemTotalBytes))
                         metric("Latest managed AI", MemoryFormatting.managedUsage(sample))
+                        metric("Other usage", MemoryFormatting.bytes(sample.otherSystemUsageBytes))
                         Spacer(minLength: 0)
                     }
                     HStack(spacing: 6) {
@@ -38,6 +39,7 @@ struct MemoryDashboardView: View {
                         HStack(spacing: 20) {
                             metric("Selected system", MemoryFormatting.usage(selectedSample.systemUsedBytes, of: selectedSample.systemTotalBytes))
                             metric("Selected managed AI", MemoryFormatting.managedUsage(selectedSample))
+                            metric("Selected other", MemoryFormatting.bytes(selectedSample.otherSystemUsageBytes))
                             Spacer(minLength: 0)
                         }
                         HStack(spacing: 6) {
@@ -72,31 +74,37 @@ struct MemoryDashboardView: View {
                 systemChart
                     .frame(height: 104)
 
-            Text("Managed AI memory")
+            Text("Reconciled memory composition")
                 .font(.subheadline.weight(.semibold))
             managedChart
                 .frame(height: 164)
 
-            Text("System used = physical RAM minus free, inactive, and speculative pages; reclaimable cached pages are excluded.")
+            Text("Service footprints are included in total system usage. Other system usage represents macOS, background applications, caches, and untracked processes not attributed to controller-owned process trees.")
                 .font(.caption2)
                 .foregroundStyle(AppTheme.secondaryText)
+            if monitor.currentSample?.readingsMayBeIncomplete == true {
+                Label("Some service footprints are unavailable; readings may be incomplete.", systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 
     private var systemChart: some View {
         let samples = monitor.samples
         let segments = MemoryTimeline.segments(samples: samples)
+        let scale = MemoryChartScale(samples: samples)
         return Chart {
             ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
                 AreaMark(
                     x: .value("Time", sample.timestamp),
-                    y: .value("Memory", gibibytes(sample.systemUsedBytes)),
+                    y: .value("Memory", scale.value(for: sample.systemUsedBytes)),
                     series: .value("Series", "System-\(segments[index])")
                 )
                 .foregroundStyle(AppTheme.accent.opacity(0.12))
                 LineMark(
                     x: .value("Time", sample.timestamp),
-                    y: .value("Memory", gibibytes(sample.systemUsedBytes)),
+                    y: .value("Memory", scale.value(for: sample.systemUsedBytes)),
                     series: .value("Series", "System-\(segments[index])")
                 )
                 .foregroundStyle(AppTheme.accent)
@@ -105,7 +113,7 @@ struct MemoryDashboardView: View {
             if let sample = monitor.currentSample {
                 PointMark(
                     x: .value("Latest time", sample.timestamp),
-                    y: .value("Latest memory", gibibytes(sample.systemUsedBytes))
+                    y: .value("Latest memory", scale.value(for: sample.systemUsedBytes))
                 )
                 .symbolSize(42)
                 .foregroundStyle(AppTheme.accent)
@@ -114,7 +122,7 @@ struct MemoryDashboardView: View {
             selectionRule
         }
         .chartXScale(domain: timeRange)
-        .chartYScale(domain: 0...systemScale)
+        .chartYScale(domain: 0...scale.upperBound)
         .chartYAxisLabel("GiB")
         .chartXAxis(.hidden)
         .chartYAxis { yAxis }
@@ -125,37 +133,28 @@ struct MemoryDashboardView: View {
     private var managedChart: some View {
         let samples = monitor.samples
         let segments = MemoryTimeline.segments(samples: samples)
-        let scale = ManagedMemoryChartScale(samples: monitor.samples)
+        let scale = MemoryChartScale(samples: samples)
         return Chart {
-            ForEach(ServiceID.allCases) { serviceID in
-                ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
-                    if let bytes = sample.serviceBytes[serviceID] {
-                        LineMark(
-                            x: .value("Time", sample.timestamp),
-                            y: .value("Memory", scale.value(for: bytes)),
-                            series: .value("Service", "\(serviceID.rawValue)-\(segments[index])")
-                        )
-                        .foregroundStyle(color(for: serviceID))
-                        .lineStyle(.init(lineWidth: 1.7))
-                    }
-                }
-                if let latest = monitor.currentSample, let bytes = latest.serviceBytes[serviceID] {
-                    PointMark(
-                        x: .value("Latest time", latest.timestamp),
-                        y: .value("Latest memory", scale.value(for: bytes))
+            ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
+                ForEach(Array(sample.composition.segments.enumerated()), id: \.element.id) { segmentIndex, segment in
+                    let start = sample.composition.segments.prefix(segmentIndex).reduce(UInt64(0)) { $0 + $1.bytes }
+                    AreaMark(
+                        x: .value("Time", sample.timestamp),
+                        yStart: .value("Start", scale.value(for: start)),
+                        yEnd: .value("Memory", scale.value(for: start + segment.bytes)),
+                        series: .value("Composition", "\(segment.id)-\(segments[index])")
                     )
-                    .symbolSize(42)
-                    .foregroundStyle(color(for: serviceID))
+                    .foregroundStyle(segment.serviceID.map(color(for:)) ?? .gray.opacity(0.55))
                 }
-                if let selectedSample, selectedSample.id != monitor.currentSample?.id,
-                   let bytes = selectedSample.serviceBytes[serviceID] {
-                    PointMark(
-                        x: .value("Selected time", selectedSample.timestamp),
-                        y: .value("Selected memory", scale.value(for: bytes))
-                    )
-                    .symbolSize(24)
-                    .foregroundStyle(color(for: serviceID).opacity(0.72))
-                }
+            }
+            ForEach(Array(samples.enumerated()), id: \.offset) { index, sample in
+                LineMark(
+                    x: .value("Time", sample.timestamp),
+                    y: .value("Total system used", scale.value(for: sample.systemUsedBytes)),
+                    series: .value("Total", "Total-\(segments[index])")
+                )
+                .foregroundStyle(AppTheme.accent)
+                .lineStyle(.init(lineWidth: 2))
             }
             latestRule
             selectionRule
@@ -171,7 +170,7 @@ struct MemoryDashboardView: View {
         }
         .chartYAxis { yAxis }
         .chartOverlay { proxy in selectionOverlay(proxy) }
-        .accessibilityLabel("Managed AI process memory over the last 15 minutes")
+        .accessibilityLabel("Reconciled system memory composition over the last 15 minutes")
     }
 
     @ChartContentBuilder
@@ -224,10 +223,6 @@ struct MemoryDashboardView: View {
         return end.addingTimeInterval(-15 * 60)...end
     }
 
-    private var systemScale: Double {
-        max(1, gibibytes(monitor.currentSample?.systemTotalBytes ?? 1))
-    }
-
     private var legend: some View {
         let sample = monitor.currentSample
         return VStack(alignment: .leading, spacing: 6) {
@@ -235,14 +230,22 @@ struct MemoryDashboardView: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(AppTheme.secondaryText)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), alignment: .leading)], alignment: .leading, spacing: 8) {
-                legendItem("System", value: sample.map { MemoryFormatting.bytes($0.systemUsedBytes) }, color: AppTheme.accent)
-                ForEach(ServiceID.allCases) { id in
-                    let reading = sample?.serviceReadings[id]
+                legendItem("Total system used", value: sample.map { MemoryFormatting.bytes($0.systemUsedBytes) }, color: AppTheme.accent)
+                if let sample {
+                    ForEach(ServiceID.allCases) { id in
+                        let reading = sample.serviceReadings[id]
+                        legendItem(
+                            MemoryPresentation.label(for: id),
+                            value: reading.map(MemoryFormatting.serviceReading),
+                            detail: reading.map(MemoryFormatting.serviceReadingDetail),
+                            color: color(for: id)
+                        )
+                    }
                     legendItem(
-                        MemoryPresentation.label(for: id),
-                        value: reading.map(MemoryFormatting.serviceReading),
-                        detail: reading.map(MemoryFormatting.serviceReadingDetail),
-                        color: color(for: id)
+                        "Other system usage",
+                        value: MemoryFormatting.bytes(sample.otherSystemUsageBytes),
+                        detail: "macOS, background applications, caches, and untracked processes.",
+                        color: .gray
                     )
                 }
             }
@@ -272,7 +275,6 @@ struct MemoryDashboardView: View {
         }
     }
 
-    private func gibibytes(_ bytes: UInt64) -> Double { Double(bytes) / 1_073_741_824 }
     private func color(for id: ServiceID) -> Color {
         switch id {
         case .llamaChat: .purple

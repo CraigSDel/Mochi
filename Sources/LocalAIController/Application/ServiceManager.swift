@@ -82,6 +82,14 @@ final class ServiceManager: ObservableObject {
         } else { sizes = nil }
         return ControllerPolicy.memoryAssessment(modelBytes: sizes, contextSize: ollama.contextLength, parallelRequests: ollama.parallelRequests, loadedModelCount: loadedCount, physicalMemory: probe.physicalMemory)
     }
+    func performanceGuidance() -> [PerformanceGuidance] {
+        PerformanceGuidanceBuilder.make(
+            configurations: configurations, installedModels: installedModels,
+            recommendations: recommendationMetadata, physicalMemory: probe.physicalMemory,
+            defaultLlamaConfiguration: ServiceLaunchConfiguration.defaultValue(for: .llamaChat).llama, defaultLlamaSize: definition(for: .llamaChat)?.estimatedBytes,
+            defaultOllamaConfiguration: ServiceLaunchConfiguration.defaultValue(for: .ollama).ollama, defaultOllamaSize: definition(for: .ollama)?.estimatedBytes
+        )
+    }
     @discardableResult
     func testTailscale() async -> TailscaleDiagnostic {
         isTestingTailscale = true

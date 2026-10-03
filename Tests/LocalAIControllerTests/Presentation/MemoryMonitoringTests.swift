@@ -15,6 +15,7 @@ final class MemoryMonitoringTests: XCTestCase {
         XCTAssertEqual(monitor.currentSample?.systemTotalBytes, 32)
         XCTAssertEqual(monitor.currentSample?.serviceBytes, [.llamaChat: 4, .ollama: 7])
         XCTAssertEqual(monitor.currentSample?.managedBytes, 11)
+        XCTAssertEqual(monitor.currentSample?.otherSystemUsageBytes, 1)
     }
 
     func testRollingBufferKeepsNewestSamples() {
@@ -167,26 +168,73 @@ final class MemoryMonitoringTests: XCTestCase {
         XCTAssertEqual(pageCountOverflowUsed, 0)
     }
 
-    func testManagedMemoryScaleAddsHeadroomAboveInferenceSpike() {
+    func testMemoryScaleUsesReconciledSystemUsedTotal() {
         let samples = [
-            memorySample(managed: 2 * 1_073_741_824),
-            memorySample(managed: 8 * 1_073_741_824)
+            memorySample(systemUsed: 2 * 1_073_741_824, managed: 1 * 1_073_741_824),
+            memorySample(systemUsed: 8 * 1_073_741_824, managed: 3 * 1_073_741_824)
         ]
-        let scale = ManagedMemoryChartScale(samples: samples)
+        let scale = MemoryChartScale(samples: samples)
 
         XCTAssertEqual(scale.unit, "GiB")
         XCTAssertEqual(scale.upperBound, 8.8, accuracy: 0.0001)
         XCTAssertEqual(scale.value(for: 8 * 1_073_741_824), 8)
     }
 
-    func testManagedMemoryScaleHandlesEmptyAndVerySmallValues() {
-        let emptyScale = ManagedMemoryChartScale(samples: [])
-        let smallScale = ManagedMemoryChartScale(samples: [memorySample(managed: 4)])
+    func testMemoryScaleHandlesEmptyTinyAndLargeValues() {
+        let emptyScale = MemoryChartScale(samples: [])
+        let tinyScale = MemoryChartScale(samples: [memorySample(systemUsed: 4, managed: 4)])
+        let largeScale = MemoryChartScale(samples: [memorySample(systemUsed: 64 * 1_073_741_824, managed: 1)])
 
         XCTAssertEqual(emptyScale.upperBound, 1)
         XCTAssertEqual(emptyScale.unit, "GiB")
-        XCTAssertEqual(smallScale.unit, "bytes")
-        XCTAssertEqual(smallScale.upperBound, 4.4, accuracy: 0.0001)
+        XCTAssertEqual(tinyScale.upperBound, 1)
+        XCTAssertEqual(largeScale.upperBound, 70.4, accuracy: 0.0001)
+    }
+
+    func testMemoryAccountingReconcilesMeasuredServicesWithOtherUsage() {
+        let sample = MemorySample(
+            timestamp: .now,
+            systemUsedBytes: 20,
+            systemTotalBytes: 32,
+            serviceReadings: [.llamaChat: .measured(bytes: 7), .ollama: .measured(bytes: 5)]
+        )
+
+        XCTAssertEqual(MemoryAccounting.otherSystemUsage(systemUsedBytes: 20, managedBytes: 12), 8)
+        XCTAssertEqual(sample.composition.otherSystemUsageBytes, 8)
+        XCTAssertEqual(sample.composition.segments.map(\.bytes).reduce(0, +), sample.systemUsedBytes)
+    }
+
+    func testMemoryAccountingClampsResidualWhenManagedExceedsSystemUsage() {
+        let sample = MemorySample(
+            timestamp: .now,
+            systemUsedBytes: 10,
+            systemTotalBytes: 32,
+            serviceReadings: [.llamaChat: .measured(bytes: 12)]
+        )
+
+        XCTAssertEqual(sample.otherSystemUsageBytes, 0)
+        XCTAssertTrue(sample.readingsMayBeIncomplete)
+        XCTAssertEqual(sample.composition.segments.map(\.bytes).reduce(0, +), 12)
+        XCTAssertFalse(sample.composition.segments.contains { $0.bytes > 0 && $0.serviceID == nil })
+    }
+
+    func testMemoryAccountingPreservesUnavailableServiceAndMarksIncomplete() {
+        let sample = MemorySample(
+            timestamp: .now,
+            systemUsedBytes: 10,
+            systemTotalBytes: 32,
+            serviceReadings: [
+                .llamaChat: .measured(bytes: 4),
+                .ollama: .footprintUnavailable(pid: 42),
+                .embeddings: .noOwnedPID(reason: "Stopped")
+            ]
+        )
+
+        XCTAssertTrue(sample.readingsMayBeIncomplete)
+        XCTAssertEqual(sample.composition.managedBytes, 4)
+        XCTAssertEqual(sample.otherSystemUsageBytes, 6)
+        XCTAssertNil(sample.composition.segments.first { $0.serviceID == .ollama })
+        XCTAssertEqual(sample.composition.segments.map(\.bytes).reduce(0, +), sample.systemUsedBytes)
     }
 
     func testFormattingAndLabelsAreComplete() {
@@ -198,13 +246,17 @@ final class MemoryMonitoringTests: XCTestCase {
         XCTAssertEqual(Set(ServiceID.allCases.map(MemoryPresentation.label)).count, ServiceID.allCases.count)
     }
 
-    private func memorySample(managed: UInt64) -> MemorySample {
+    private func memorySample(systemUsed: UInt64, managed: UInt64) -> MemorySample {
         MemorySample(
             timestamp: Date(timeIntervalSince1970: 1),
-            systemUsedBytes: 0,
+            systemUsedBytes: systemUsed,
             systemTotalBytes: 1,
             serviceBytes: [.llamaChat: managed]
         )
+    }
+
+    private func memorySample(managed: UInt64) -> MemorySample {
+        memorySample(systemUsed: managed, managed: managed)
     }
 
     private func memorySample(at timestamp: TimeInterval) -> MemorySample {

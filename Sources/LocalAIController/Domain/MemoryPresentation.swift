@@ -1,31 +1,75 @@
 import Foundation
 
-struct ManagedMemoryChartScale {
+struct MemoryChartScale {
     let upperBound: Double
     let unit: String
     private let divisor: Double
 
     init(samples: [MemorySample]) {
-        let maximumBytes = samples.map(\.managedBytes).max() ?? 0
-        guard maximumBytes > 0 else {
-            divisor = 1_073_741_824
-            unit = "GiB"
-            upperBound = 1
-            return
-        }
-        let units: [(threshold: UInt64, divisor: Double, label: String)] = [
-            (1_073_741_824, 1_073_741_824, "GiB"),
-            (1_048_576, 1_048_576, "MiB"),
-            (1_024, 1_024, "KiB"),
-            (1, 1, "bytes")
-        ]
-        let selectedUnit = units.first { maximumBytes >= $0.threshold }!
-        divisor = selectedUnit.divisor
-        unit = selectedUnit.label
-        upperBound = Double(maximumBytes) / divisor * 1.1
+        divisor = 1_073_741_824
+        unit = "GiB"
+        let maximumBytes = samples.map(\.systemUsedBytes).max() ?? 0
+        upperBound = max(1, Double(maximumBytes) / divisor * 1.1)
     }
 
     func value(for bytes: UInt64) -> Double { Double(bytes) / divisor }
+}
+
+struct MemoryCompositionSegment: Identifiable, Equatable, Sendable {
+    let id: String
+    let serviceID: ServiceID?
+    let bytes: UInt64
+
+    var label: String {
+        serviceID.map(MemoryPresentation.label) ?? "Other system usage"
+    }
+}
+
+struct MemoryComposition: Equatable, Sendable {
+    let totalSystemUsedBytes: UInt64
+    let managedBytes: UInt64
+    let otherSystemUsageBytes: UInt64
+    let segments: [MemoryCompositionSegment]
+    let readingsMayBeIncomplete: Bool
+}
+
+enum MemoryAccounting {
+    static func otherSystemUsage(systemUsedBytes: UInt64, managedBytes: UInt64) -> UInt64 {
+        systemUsedBytes >= managedBytes ? systemUsedBytes - managedBytes : 0
+    }
+
+    static func composition(for sample: MemorySample) -> MemoryComposition {
+        let measured = ServiceID.allCases.compactMap { id -> MemoryCompositionSegment? in
+            guard let bytes = sample.serviceReadings[id]?.bytes else { return nil }
+            return MemoryCompositionSegment(id: id.rawValue, serviceID: id, bytes: bytes)
+        }
+        let managedBytes = measured.reduce(UInt64(0)) { total, segment in
+            let (sum, overflow) = total.addingReportingOverflow(segment.bytes)
+            return overflow ? .max : sum
+        }
+        let otherBytes = otherSystemUsage(
+            systemUsedBytes: sample.systemUsedBytes,
+            managedBytes: managedBytes
+        )
+        let other = MemoryCompositionSegment(id: "other", serviceID: nil, bytes: otherBytes)
+        let incomplete = managedBytes > sample.systemUsedBytes || sample.serviceReadings.values.contains {
+            if case .footprintUnavailable = $0 { return true }
+            return false
+        }
+        return MemoryComposition(
+            totalSystemUsedBytes: sample.systemUsedBytes,
+            managedBytes: managedBytes,
+            otherSystemUsageBytes: otherBytes,
+            segments: measured + [other],
+            readingsMayBeIncomplete: incomplete
+        )
+    }
+}
+
+extension MemorySample {
+    var composition: MemoryComposition { MemoryAccounting.composition(for: self) }
+    var otherSystemUsageBytes: UInt64 { composition.otherSystemUsageBytes }
+    var readingsMayBeIncomplete: Bool { composition.readingsMayBeIncomplete }
 }
 
 enum MemoryTimeline {

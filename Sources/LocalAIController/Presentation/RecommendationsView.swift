@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecommendationsView: View {
     @ObservedObject var store: RecommendationStore
+    let guidance: [PerformanceGuidance]
     @State private var role: RecommendationRole?
     @AppStorage("recommendations.compatibilityFilter") private var compatibilityFilter: RecommendationCompatibilityFilter = .all
     var filtered: [ModelRecommendation] { compatibilityFilter.apply(to: store.recommendations, role: role) }
@@ -68,6 +69,10 @@ struct RecommendationsView: View {
                 }
                 .appCard(padding: 14)
 
+                ForEach(guidance) { item in
+                    PerformanceGuidanceCard(guidance: item)
+                }
+
                 if filtered.isEmpty && !store.isRefreshing {
                     FriendlyEmptyState(
                         symbol: hasFailure ? "wifi.exclamationmark" : "sparkles",
@@ -116,6 +121,54 @@ struct RecommendationsView: View {
         .buttonStyle(.plain)
         .background(selected ? AppTheme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct PerformanceGuidanceCard: View {
+    let guidance: PerformanceGuidance
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "speedometer")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(tone)
+                    .frame(width: 38, height: 38)
+                    .background(tone.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Performance guidance · \(guidance.runtime == .ollama ? "Ollama" : "llama.cpp")")
+                        .font(.headline)
+                    Text(guidance.modelLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(guidance.severity.rawValue.capitalized)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tone)
+            }
+            Text(guidance.summary)
+                .font(.subheadline)
+            Text("Advisory only — this guidance does not change launch settings or start services.")
+                .font(.caption)
+                .foregroundStyle(AppTheme.secondaryText)
+            ForEach(guidance.recommendations, id: \.self) { recommendation in
+                Label(recommendation, systemImage: recommendation.hasPrefix("MLX/") ? "info.circle" : "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(recommendation.hasPrefix("MLX/") ? AppTheme.secondaryText : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .appCard()
+    }
+
+    private var tone: Color {
+        switch guidance.severity {
+        case .safe: .green
+        case .caution: .orange
+        case .high: .red
+        case .unverified: .secondary
+        }
     }
 }
 

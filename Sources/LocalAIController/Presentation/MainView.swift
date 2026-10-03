@@ -52,7 +52,7 @@ struct MainView: View {
                     ServiceDetail(service: service, manager: manager, recommendations: recommendations)
                 }
             case .recommendations:
-                RecommendationsView(store: recommendations)
+                RecommendationsView(store: recommendations, guidance: manager.performanceGuidance())
             }
         }
         .background(AppTheme.pageBackground)
