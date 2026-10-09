@@ -5,12 +5,17 @@ import Combine
 final class ServiceManager: ObservableObject {
     static let startAllServiceIDs: [ServiceID] = [.llamaChat, .autocomplete, .embeddings]
     @Published var services: [ServiceSnapshot]
-    @Published private(set) var configurations: [ServiceID: ServiceLaunchConfiguration]
+    @Published var configurations: [ServiceID: ServiceLaunchConfiguration]
     @Published private(set) var installedModels: [DiscoveredModel]
     @Published private(set) var modelMetadata: [String: ModelMetadata]
     @Published private(set) var modelSettings: [ModelAssignmentKey: ModelSettingsProfile]
     @Published private(set) var latestTailscaleDiagnostic: TailscaleDiagnostic?
     @Published private(set) var isTestingTailscale = false
+    @Published var hardwareProfile: HardwareProfile?
+    @Published var isRefreshingHardware = false
+    @Published var hardwareTuningPlan: HardwareTuningPlan?
+    @Published var hardwareApplyMessage = ""
+    @Published var canRestoreHardwareTuning = false
     @Published var presentedFailure: ServiceFailure?
     @Published var launchAtLogin = false
 
@@ -23,6 +28,8 @@ final class ServiceManager: ObservableObject {
     let processStore: any ManagedProcessStoring
     let logStore: any ServiceLogStoring
     let logger: any ServiceLogging
+    let defaults: UserDefaults
+    let hardwareUndoKey = "hardwareTuningUndo"
     let stopPollAttempts: Int
     var validatedProcessRoots: [ServiceID: ManagedProcessRoot] = [:]
     var recommendationMetadata: [ModelRecommendation] = []
@@ -52,6 +59,7 @@ final class ServiceManager: ObservableObject {
         configurationStore: (any ServiceConfigurationStoring)? = nil
     ) {
         self.fileManager = fileManager
+        self.defaults = defaults
         self.stopPollAttempts = stopPollAttempts
         self.logger = logger ?? LiveServiceLogger()
         let resolvedProbe = probe ?? LiveSystemProbe(fileManager: fileManager)
@@ -65,6 +73,7 @@ final class ServiceManager: ObservableObject {
         self.installedModels = []
         self.modelMetadata = [:]
         self.modelSettings = [:]
+        self.canRestoreHardwareTuning = defaults.data(forKey: hardwareUndoKey) != nil
 
         var loaded = self.configurationStore.load()
         if loaded == nil {
@@ -97,6 +106,7 @@ final class ServiceManager: ObservableObject {
             self.installedModels = await self.modelManager.discover()
             self.modelMetadata = await self.modelManager.loadMetadata()
             self.modelSettings = await self.modelSettingsStore.load()
+            Task { @MainActor [weak self] in await self?.refreshHardwareProfile() }
             await self.refreshStatuses()
         }
         if startTimer {
@@ -108,7 +118,10 @@ final class ServiceManager: ObservableObject {
 
     var managedProcessMemoryRoots: [ServiceID: ManagedProcessRoot] { validatedProcessRoots }
     func configuration(for id: ServiceID) -> ServiceLaunchConfiguration { configurations[id] ?? .defaultValue(for: id) }
-    func replaceInstalledModels(_ models: [DiscoveredModel]) { installedModels = models }
+    func replaceInstalledModels(_ models: [DiscoveredModel]) {
+        installedModels = models
+        rebuildHardwareTuningPlan()
+    }
     func replaceModelMetadata(_ metadata: [String: ModelMetadata]) { modelMetadata = metadata }
     func replaceModelSettings(_ settings: [ModelAssignmentKey: ModelSettingsProfile]) { modelSettings = settings }
 
@@ -129,8 +142,6 @@ final class ServiceManager: ObservableObject {
         if let wifi = await probe.wifiIP() { return wifi }
         return await probe.localNetworkIP()
     }
-
-    func updateRecommendationMetadata(_ recommendations: [ModelRecommendation]) { recommendationMetadata = recommendations }
 
     func memoryAssessment(for id: ServiceID) -> MemoryAssessment {
         let config = configuration(for: id)
@@ -259,7 +270,8 @@ final class ServiceManager: ObservableObject {
         id == .ollama ? "http://\(host):\(port)" : "http://\(host):\(port)/v1"
     }
 
-    private func persistConfigurations() {
+    func persistConfigurations() {
         configurationStore.save(configurations)
     }
+
 }

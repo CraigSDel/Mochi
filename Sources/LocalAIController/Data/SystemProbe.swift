@@ -33,13 +33,17 @@ protocol ModelInventoryProbing: AnyObject, Sendable {
     func discoverModels() async -> [DiscoveredModel]
 }
 
+protocol HardwareProbing: AnyObject, Sendable {
+    func hardwareProfile() async -> HardwareProfile
+}
+
 protocol SystemProbing: SystemCommandProbing, NetworkProbing, ProcessProbing,
-    RuntimeHealthProbing, RuntimeResourceProbing, ModelInventoryProbing {
+    RuntimeHealthProbing, RuntimeResourceProbing, ModelInventoryProbing, HardwareProbing {
     func tailscaleDiagnostic() async -> TailscaleDiagnostic
 }
 
 final class LiveSystemProbe: SystemProbing, @unchecked Sendable {
-    private let fileManager: FileManager
+    let fileManager: FileManager
     init(fileManager: FileManager = .default) { self.fileManager = fileManager }
     var supportDirectory: URL { fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Local AI Controller") }
     var physicalMemory: UInt64 { ProcessInfo.processInfo.physicalMemory }
@@ -120,7 +124,7 @@ final class LiveSystemProbe: SystemProbing, @unchecked Sendable {
         return await Self.runDetached(executable, arguments)
     }
 
-    private nonisolated static func runDetached(_ executable: String, _ arguments: [String]) async -> String? {
+    nonisolated static func runDetached(_ executable: String, _ arguments: [String]) async -> String? {
         await Task.detached(priority: .utility) {
             let process = Process(); let pipe = Pipe()
             process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments

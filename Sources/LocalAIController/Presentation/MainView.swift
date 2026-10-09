@@ -139,6 +139,8 @@ struct OverviewView: View {
 
                 MemoryDashboardView(monitor: memoryMonitor)
 
+                HardwareProfileCard(manager: manager)
+
                 localNetworkCard
                 tailscaleDiagnosticCard
 

@@ -19,6 +19,7 @@ final class FakeProbe: SystemProbing, @unchecked Sendable {
     var lastHealthPort: Int?
     var lastHealthHost: String?
     var discoveredModels: [DiscoveredModel] = []
+    var hardware = HardwareProfile.unavailable
     var diagnostic = TailscaleDiagnostic(status: .direct, peer: "test-peer", detail: "direct", checkedAt: Date())
     var diagnosticCallCount = 0
     init(directory: URL) { supportDirectory = directory }
@@ -52,6 +53,7 @@ final class FakeProbe: SystemProbing, @unchecked Sendable {
         await MainActor.run { diagnosticCallCount += 1; return diagnostic }
     }
     func discoverModels() async -> [DiscoveredModel] { await MainActor.run { discoveredModels } }
+    func hardwareProfile() async -> HardwareProfile { await MainActor.run { hardware } }
 }
 
 @MainActor
