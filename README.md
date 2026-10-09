@@ -1,7 +1,7 @@
 # Mochi
 
 <p align="center">
-  <img src="AppResources/AppIcon.mov" alt="Mochi icon" width="128">
+  <img src="AppResources/AppIcon.png" alt="Mochi icon" width="128">
 </p>
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-0B83FF?style=flat-square&logo=apple&labelColor=141414)
@@ -39,7 +39,7 @@ The controller exposes llama.cpp endpoints over your chosen network binding.
 This overview is a real capture of the app with all three services stopped;
 it shows the control center, memory dashboard, service cards, and navigation.
 
-![Mochi overview showing the control center, memory dashboard, and three llama.cpp service cards.](docs/images/controller-overview.png)
+![Mochi overview showing the control center, memory dashboard, and three llama.cpp service cards.](docs/videos/controller-overview.mov)
 
 ## Requirements
 
