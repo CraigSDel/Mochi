@@ -3,6 +3,15 @@ import XCTest
 
 @MainActor
 final class RecommendationStoreTests: XCTestCase {
+    private func recommendation(id: String = "hf:owner/model") -> ModelRecommendation {
+        ModelRecommendation(
+            id: id, name: "owner/model", source: "Hugging Face", runtime: "llama.cpp", role: .chat,
+            quantization: "Q4_K_M", sizeBytes: 1_000, context: "test", license: "test",
+            compatibility: .compatible, rationale: "test", updatedAt: nil,
+            repository: "owner/model", filename: "model-Q4_K_M.gguf"
+        )
+    }
+
     func testCompleteProviderFailureRetainsCacheAndDoesNotAdvanceLastChecked() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -40,5 +49,59 @@ final class RecommendationStoreTests: XCTestCase {
 
         XCTAssertEqual(store.recommendations.filter { $0.source == "Verified llama.cpp" }.count, 3)
         XCTAssertTrue(store.recommendations.contains { $0.id == "cached" })
+    }
+
+    func testDownloadQueuePersistsDeduplicatesAndRemoves() throws {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(Date(), forKey: "recommendationsLastChecked")
+        let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let model = recommendation()
+        let store = RecommendationStore(providers: [], defaults: defaults, cacheURL: cacheURL, startTimer: false)
+
+        store.addToDownloadQueue(model)
+        store.addToDownloadQueue(model)
+
+        XCTAssertEqual(store.downloadQueue.map(\.id), [model.id])
+        let reloaded = RecommendationStore(providers: [], defaults: defaults, cacheURL: cacheURL, startTimer: false)
+        XCTAssertEqual(reloaded.downloadQueue.map(\.id), [model.id])
+
+        reloaded.removeFromDownloadQueue(model)
+        XCTAssertTrue(reloaded.downloadQueue.isEmpty)
+    }
+
+    func testQueuedModelSurvivesSuccessfulCatalogRefresh() async {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(Date(), forKey: "recommendationsLastChecked")
+        let provider = StubRecommendationProvider(sourceName: "Registry", result: .success([]))
+        let model = recommendation()
+        let store = RecommendationStore(providers: [provider], defaults: defaults, startTimer: false)
+
+        store.addToDownloadQueue(model)
+        await store.refresh()
+
+        XCTAssertTrue(store.recommendations.contains { $0.id == model.id })
+    }
+
+    func testSearchUsesInjectedProviderAndPublishesResults() async {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        defaults.set(Date(), forKey: "recommendationsLastChecked")
+        let model = recommendation()
+        let searchProvider = StubSearchProvider(result: .success([model]))
+        let store = RecommendationStore(providers: [], searchProvider: searchProvider, defaults: defaults, startTimer: false)
+
+        await store.search(query: "qwen")
+
+        XCTAssertEqual(store.searchQuery, "qwen")
+        XCTAssertEqual(store.searchResults.map(\.id), [model.id])
+        XCTAssertEqual(store.searchStatus, "Found 1 result")
+        XCTAssertFalse(store.isSearching)
+    }
+}
+
+private struct StubSearchProvider: ModelSearchProvider {
+    let result: Result<[ModelRecommendation], Error>
+
+    func search(query: String) async throws -> [ModelRecommendation] {
+        try result.get()
     }
 }

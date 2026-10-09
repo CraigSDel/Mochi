@@ -83,7 +83,7 @@ func attemptStart(_ id: ServiceID, manager: ServiceManager) {
         var warnings = manager.launchWarnings(for: [id])
         let networkWarning = await manager.tailscaleLaunchWarning(for: [id])
         if let networkWarning { warnings.append(networkWarning) }
-        let offersWiFi = networkWarning != nil && manager.wifiIP() != nil
+        let offersWiFi = networkWarning != nil ? await manager.wifiIP() != nil : false
         let decision = confirmWarnings(warnings, offersLocalFallback: networkWarning != nil, offersWiFiFallback: offersWiFi)
         guard decision.shouldStart else { return }
         guard confirmRequiredDownloads(for: [id], manager: manager) else { return }
@@ -101,7 +101,7 @@ func attemptStartAll(_ manager: ServiceManager) {
         var warnings = manager.launchWarnings(for: ids, bindModeOverride: selectedMode)
         let networkWarning = await manager.tailscaleLaunchWarning(for: ids, bindModeOverride: selectedMode)
         if let networkWarning { warnings.append(networkWarning) }
-        let offersWiFi = networkWarning != nil && manager.wifiIP() != nil
+        let offersWiFi = networkWarning != nil ? await manager.wifiIP() != nil : false
         let decision = confirmWarnings(warnings, offersLocalFallback: networkWarning != nil, offersWiFiFallback: offersWiFi)
         guard decision.shouldStart else { return }
         guard confirmRequiredDownloads(for: ids, manager: manager) else { return }

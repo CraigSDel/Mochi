@@ -4,8 +4,11 @@ struct RecommendationsView: View {
     @ObservedObject var store: RecommendationStore
     let guidance: [PerformanceGuidance]
     @State private var role: RecommendationRole?
+    @State private var searchText = ""
     @AppStorage("recommendations.compatibilityFilter") private var compatibilityFilter: RecommendationCompatibilityFilter = .all
-    var filtered: [ModelRecommendation] { compatibilityFilter.apply(to: store.recommendations, role: role) }
+    private var isSearchingCatalog: Bool { !store.searchQuery.isEmpty }
+    private var sourceModels: [ModelRecommendation] { isSearchingCatalog ? store.searchResults : store.recommendations }
+    var filtered: [ModelRecommendation] { compatibilityFilter.apply(to: sourceModels, role: role) }
     private var hasFailure: Bool { store.status.hasPrefix("Unavailable") }
     private var hasActiveFilter: Bool { role != nil || compatibilityFilter != .all }
 
@@ -32,6 +35,35 @@ struct RecommendationsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(AppTheme.secondaryText)
+                        TextField("Search Hugging Face models", text: $searchText)
+                            .textFieldStyle(.plain)
+                            .onSubmit { search() }
+                        if !searchText.isEmpty {
+                            Button("Clear") {
+                                searchText = ""
+                                store.clearSearch()
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(AppTheme.secondaryText)
+                        }
+                        Button(store.isSearching ? "Searching…" : "Search") { search() }
+                            .buttonStyle(AppleSecondaryButtonStyle())
+                            .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
+                    }
+                    .padding(9)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.72), in: RoundedRectangle(cornerRadius: 9))
+                    if isSearchingCatalog {
+                        HStack(spacing: 8) {
+                            Image(systemName: store.searchStatus.hasPrefix("Search unavailable") ? "exclamationmark.triangle.fill" : "magnifyingglass")
+                                .foregroundStyle(store.searchStatus.hasPrefix("Search unavailable") ? Color.orange : AppTheme.accent)
+                            Text(store.searchStatus)
+                            Spacer()
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
                     HStack(spacing: 12) {
                         Text("Role")
                             .font(.system(size: 15, weight: .medium))
@@ -73,15 +105,26 @@ struct RecommendationsView: View {
                     PerformanceGuidanceCard(guidance: item)
                 }
 
-                if filtered.isEmpty && !store.isRefreshing {
+                if !store.downloadQueue.isEmpty {
+                    DownloadQueueSection(store: store)
+                }
+
+                if filtered.isEmpty && !store.isRefreshing && !store.isSearching {
                     FriendlyEmptyState(
-                        symbol: hasFailure ? "wifi.exclamationmark" : "sparkles",
-                        title: hasFailure ? "Recommendations unavailable" : (hasActiveFilter && !store.recommendations.isEmpty ? "No matching recommendations" : "No recommendations yet"),
-                        message: hasFailure ? "Check your connection and try again. Cached results will remain available." : (hasActiveFilter && !store.recommendations.isEmpty ? "Change the role or compatibility filter to see more models." : "Check the registries now to find models that fit this Mac.")
+                        symbol: isSearchingCatalog ? "magnifyingglass" : (hasFailure ? "wifi.exclamationmark" : "sparkles"),
+                        title: isSearchingCatalog ? "No matching Hugging Face models" : (hasFailure ? "Recommendations unavailable" : (hasActiveFilter && !store.recommendations.isEmpty ? "No matching recommendations" : "No recommendations yet")),
+                        message: isSearchingCatalog ? "Try a different search term." : (hasFailure ? "Check your connection and try again. Cached results will remain available." : (hasActiveFilter && !store.recommendations.isEmpty ? "Change the role or compatibility filter to see more models." : "Check the registries now to find models that fit this Mac."))
                     )
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(filtered) { model in RecommendationCard(model: model) }
+                        ForEach(filtered) { model in
+                            RecommendationCard(
+                                model: model,
+                                queued: store.isQueued(model),
+                                canQueue: store.canQueue(model),
+                                onQueue: { store.addToDownloadQueue(model) }
+                            )
+                        }
                     }
                 }
             }
@@ -89,6 +132,10 @@ struct RecommendationsView: View {
             .padding(.vertical, 32)
         }
         .background(AppTheme.pageBackground)
+    }
+
+    private func search() {
+        Task { await store.search(query: searchText) }
     }
 
     private func roleButton(_ title: String, value: RecommendationRole?) -> some View {
@@ -174,6 +221,9 @@ private struct PerformanceGuidanceCard: View {
 
 private struct RecommendationCard: View {
     let model: ModelRecommendation
+    let queued: Bool
+    let canQueue: Bool
+    let onQueue: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -200,6 +250,38 @@ private struct RecommendationCard: View {
                 Text("Updated \(model.updatedAt?.formatted(date: .abbreviated, time: .omitted) ?? "unknown")")
             }
             .font(.caption2).foregroundStyle(.tertiary)
+            if canQueue || queued {
+                Button {
+                    onQueue()
+                } label: {
+                    Label(queued ? "Queued for download" : "Add to download list", systemImage: queued ? "checkmark.circle.fill" : "arrow.down.circle")
+                }
+                .buttonStyle(AppleSecondaryButtonStyle())
+                .disabled(queued)
+            }
+        }
+        .appCard()
+    }
+}
+
+private struct DownloadQueueSection: View {
+    @ObservedObject var store: RecommendationStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeading("Download list", subtitle: "Select a queued model in a llama.cpp service to download it when that service starts.", symbol: "arrow.down.circle")
+            ForEach(store.downloadQueue) { model in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.name).font(.subheadline.weight(.medium))
+                        Text("\(model.quantization) · \(model.sizeText)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button("Remove") { store.removeFromDownloadQueue(model) }
+                        .buttonStyle(AppleSecondaryButtonStyle())
+                }
+                .padding(.vertical, 3)
+            }
         }
         .appCard()
     }

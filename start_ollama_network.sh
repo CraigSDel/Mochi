@@ -10,8 +10,6 @@ readonly SCRIPT_NAME=${0##*/}
 readonly LSOF=/usr/sbin/lsof
 PORT="${OLLAMA_PORT:-11434}"
 BIND_MODE="tailscale"
-INSTALL_MISSING=true
-TAILSCALE_UP=true
 REPLACE=false
 PULL_MISSING=true
 SERVER_PID=""
@@ -26,8 +24,6 @@ Options:
   --bind tailscale|localhost|lan  Listening interface (default: tailscale)
   --port PORT                    Listening port (default: 11434)
   --replace                      Gracefully stop an existing Ollama listener
-  --no-install                   Do not install missing Homebrew packages
-  --no-tailscale-up              Do not run 'tailscale up' when disconnected
   --no-pull                      Fail instead of downloading missing models
   -h, --help                     Show this help
 
@@ -53,29 +49,14 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-install_formula() {
-  local command_name=$1 formula=$2
-  command -v "$command_name" >/dev/null 2>&1 && return 0
-  "$INSTALL_MISSING" || die "$command_name is required but is not installed."
-  command -v brew >/dev/null 2>&1 || die "Homebrew is required to install $formula: https://brew.sh"
-  log "Installing $formula with Homebrew..."
-  brew install "$formula"
-  command -v "$command_name" >/dev/null 2>&1 || die "$formula installed, but $command_name is not on PATH."
-}
-
 tailscale_ipv4() {
   tailscale ip -4 2>/dev/null | awk 'NR == 1 && $0 ~ /^100\.[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }'
 }
 
 ensure_tailscale() {
   local ip
-  install_formula tailscale tailscale >&2
+  command -v tailscale >/dev/null 2>&1 || die "Tailscale is required but is not installed. Install and connect it outside this app."
   ip=$(tailscale_ipv4 || true)
-  if [ -z "$ip" ] && "$TAILSCALE_UP"; then
-    log "Tailscale is disconnected; starting sign-in..." >&2
-    tailscale up || sudo tailscale up
-    ip=$(tailscale_ipv4 || true)
-  fi
   [ -n "$ip" ] || die "Tailscale is not connected. Run 'tailscale up', then retry."
   printf '%s\n' "$ip"
 }
@@ -88,8 +69,6 @@ parse_args() {
       --bind) [ "$#" -ge 2 ] || die "--bind requires a value."; BIND_MODE=$2; shift 2 ;;
       --port) [ "$#" -ge 2 ] || die "--port requires a value."; PORT=$2; shift 2 ;;
       --replace) REPLACE=true; shift ;;
-      --no-install) INSTALL_MISSING=false; shift ;;
-      --no-tailscale-up) TAILSCALE_UP=false; shift ;;
       --no-pull) PULL_MISSING=false; shift ;;
       -h|--help) usage; exit 0 ;;
       *) die "Unknown option: $1 (use --help)" ;;
@@ -123,8 +102,8 @@ stop_existing_ollama() {
 parse_args "$@"
 [ "$(uname -s)" = "Darwin" ] || die "This setup currently supports macOS only."
 [ -x "$LSOF" ] || die "The macOS system utility $LSOF is unavailable."
-install_formula ollama ollama
-install_formula curl curl
+command -v ollama >/dev/null 2>&1 || die "ollama is required but is not installed. Install Ollama outside this app."
+command -v curl >/dev/null 2>&1 || die "curl is required but is not installed. Install it outside this app."
 
 case "$BIND_MODE" in
   tailscale) BIND_HOST=$(ensure_tailscale) ;;
@@ -144,6 +123,14 @@ export OLLAMA_KV_CACHE_TYPE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
 export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
 export OLLAMA_CONTEXT_LENGTH="${OLLAMA_CONTEXT_LENGTH:-16384}"
 export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
+[[ "$OLLAMA_FLASH_ATTENTION" =~ ^[01]$ ]] || die "Invalid flash attention value: $OLLAMA_FLASH_ATTENTION"
+case "$OLLAMA_KV_CACHE_TYPE" in q4_0|q4_1|q8_0|f16|f32) ;; *) die "Invalid KV cache type: $OLLAMA_KV_CACHE_TYPE" ;; esac
+for value_name in OLLAMA_CONTEXT_LENGTH OLLAMA_NUM_PARALLEL OLLAMA_MAX_LOADED_MODELS; do
+  value="${!value_name}"; [[ "$value" =~ ^[0-9]+$ ]] && (( value > 0 )) || die "Invalid $value_name: $value"
+done
+(( OLLAMA_CONTEXT_LENGTH <= 262144 )) || die "Invalid context length: $OLLAMA_CONTEXT_LENGTH"
+(( OLLAMA_NUM_PARALLEL <= 32 )) || die "Invalid parallel requests: $OLLAMA_NUM_PARALLEL"
+(( OLLAMA_MAX_LOADED_MODELS <= 3 )) || die "Invalid maximum loaded models: $OLLAMA_MAX_LOADED_MODELS"
 
 log "Starting Ollama on ${BIND_HOST}:${PORT} ($BIND_MODE mode)..."
 OLLAMA_HOST="${BIND_HOST}:${PORT}" ollama serve &

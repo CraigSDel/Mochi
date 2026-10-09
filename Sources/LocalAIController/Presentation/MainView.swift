@@ -24,6 +24,8 @@ struct MainView: View {
                 Section("Workspace") {
                     Label("Overview", systemImage: "square.grid.2x2.fill")
                         .tag(SidebarDestination.overview)
+                    Label("Models", systemImage: "shippingbox.fill")
+                        .tag(SidebarDestination.models)
                 }
                 Section("Services") {
                     ForEach(manager.services) { service in
@@ -36,10 +38,6 @@ struct MainView: View {
                         }.tag(SidebarDestination.service(service.id))
                     }
                 }
-                Section("Discover") {
-                    Label("Recommendations", systemImage: "sparkles")
-                        .tag(SidebarDestination.recommendations)
-                }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 190, ideal: 220)
@@ -47,6 +45,8 @@ struct MainView: View {
             switch selection {
             case .overview:
                 OverviewView(manager: manager, recommendations: recommendations, memoryMonitor: memoryMonitor, selection: $selection)
+            case .models:
+                ModelsView(manager: manager, recommendations: recommendations)
             case .service(let serviceID):
                 if let service = manager.services.first(where: { $0.id == serviceID }) {
                     ServiceDetail(service: service, manager: manager, recommendations: recommendations)
@@ -58,8 +58,10 @@ struct MainView: View {
         .background(AppTheme.pageBackground)
         .toolbar {
             Button {
-                manager.refreshModelInventory()
-                Task { await manager.refreshStatuses() }
+                Task {
+                    await manager.refreshModelInventory()
+                    await manager.refreshStatuses()
+                }
             } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                 .help("Refresh service status")
         }
@@ -82,6 +84,7 @@ struct OverviewView: View {
     @ObservedObject var recommendations: RecommendationStore
     @ObservedObject var memoryMonitor: MemoryMonitor
     @Binding var selection: SidebarDestination
+    @State private var localNetworkAddress: String?
 
     private var runningCount: Int { manager.services.filter { $0.state == .running }.count }
     private var activeCount: Int { manager.services.filter { [.running, .starting, .stopping].contains($0.state) }.count }
@@ -177,7 +180,7 @@ struct OverviewView: View {
     }
 
     private var localNetworkCard: some View {
-        let address = manager.localNetworkIP()
+        let address = localNetworkAddress
         return HStack(spacing: 14) {
             Image(systemName: "wifi")
                 .font(.title2.weight(.semibold))
@@ -205,6 +208,7 @@ struct OverviewView: View {
             }
         }
         .appCard()
+        .task { localNetworkAddress = await manager.localNetworkIP() }
     }
 }
 

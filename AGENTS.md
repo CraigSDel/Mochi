@@ -68,6 +68,18 @@ turn this small package into a speculative multi-module architecture.
 
 ## Definition of done
 
+Review every user-visible or persisted configuration field through the complete path: UI → model → environment/arguments → launcher → runtime. Flag fields that are stored or displayed but not consumed.
+
+Treat process ownership as an exact identity check. Never consider a process owned solely because its command contains `bash`, a runtime name, or a partial executable name. Verify executable identity, launcher path, arguments, and PID reuse.
+
+Keep synchronous process waits, `lsof`, `ps`, filesystem scans, and model discovery off `@MainActor`. Require injected async/actor-backed probes and responsiveness-focused tests.
+
+Launcher scripts must not install dependencies, invoke `sudo`, alter system configuration, or broaden network exposure. Missing dependencies must fail with actionable guidance.
+
+Require tests for shell/Swift contract synchronization whenever configuration fields, environment variables, ports, bind modes, download policies, or runtime tuning settings change.
+
+Treat passing unit tests as insufficient when scripts or external runtimes are involved; perform static contract inspection and targeted integration checks.
+
 Run the narrowest relevant test while iterating, then run:
 
 ```bash

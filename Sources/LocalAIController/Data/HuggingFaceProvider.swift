@@ -40,7 +40,7 @@ enum FlexibleGated: Decodable, Sendable {
     var isGated: Bool { if case .bool(false) = self { return false }; return true }
 }
 
-struct HuggingFaceProvider: RecommendationProvider {
+struct HuggingFaceProvider: RecommendationProvider, ModelSearchProvider {
     let sourceName = "Hugging Face"
     static let detailConcurrencyLimit = 4
     static let requestTimeout: TimeInterval = 20
@@ -49,7 +49,15 @@ struct HuggingFaceProvider: RecommendationProvider {
     init(fetcher: any HTTPFetching = URLSessionFetching()) { self.fetcher = fetcher }
 
     func fetch() async throws -> [ModelRecommendation] {
-        let summaries = try await load(Self.summariesURL())
+        try await fetch(query: nil)
+    }
+
+    func search(query: String) async throws -> [ModelRecommendation] {
+        try await fetch(query: query)
+    }
+
+    private func fetch(query: String?) async throws -> [ModelRecommendation] {
+        let summaries = try await load(Self.summariesURL(query: query))
         let detailed = await resolveDetails(for: summaries)
         return summaries.indices.map { detailed[$0] ?? summaries[$0] }.map(classify)
     }
@@ -146,12 +154,16 @@ struct HuggingFaceProvider: RecommendationProvider {
         return ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q5_K_S"].first { file.uppercased().contains($0) } ?? "GGUF"
     }
 
-    private static func summariesURL() -> URL {
+    private static func summariesURL(query: String? = nil) -> URL {
         var components = URLComponents(string: "https://huggingface.co/api/models")!
-        components.queryItems = [
+        var queryItems: [URLQueryItem] = [
             .init(name: "filter", value: "gguf"), .init(name: "sort", value: "lastModified"),
             .init(name: "direction", value: "-1"), .init(name: "limit", value: "50"), .init(name: "full", value: "true")
         ]
+        if let query, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(.init(name: "search", value: query.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+        components.queryItems = queryItems
         return components.url!
     }
 

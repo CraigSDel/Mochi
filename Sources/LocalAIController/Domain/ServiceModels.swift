@@ -7,6 +7,7 @@ enum ServiceID: String, Codable, CaseIterable, Identifiable, Hashable, Sendable 
 
 enum SidebarDestination: Hashable {
     case overview
+    case models
     case service(ServiceID)
     case recommendations
 
@@ -88,6 +89,54 @@ struct LlamaLaunchConfiguration: Codable, Equatable, Sendable {
     var alias: String
     var contextSize: Int
     var gpuLayers: Int
+    var flashAttention: Bool
+    var kvCacheKeyType: String
+    var kvCacheValueType: String
+    var cacheReuse: Int
+    var batchSize: Int
+    var ubatchSize: Int
+    var threads: Int
+    var threadsBatch: Int
+    var generation: GenerationProfile
+
+    init(
+        repository: String, filename: String, alias: String, contextSize: Int,
+        gpuLayers: Int, flashAttention: Bool = true, kvCacheKeyType: String = "q8_0",
+        kvCacheValueType: String = "q8_0", cacheReuse: Int = 256, batchSize: Int = 512,
+        ubatchSize: Int = 256, threads: Int = 0, threadsBatch: Int = 0,
+        generation: GenerationProfile = .balanced
+    ) {
+        self.repository = repository; self.filename = filename; self.alias = alias
+        self.contextSize = contextSize; self.gpuLayers = gpuLayers
+        self.flashAttention = flashAttention; self.kvCacheKeyType = kvCacheKeyType
+        self.kvCacheValueType = kvCacheValueType; self.cacheReuse = cacheReuse
+        self.batchSize = batchSize; self.ubatchSize = ubatchSize; self.threads = threads
+        self.threadsBatch = threadsBatch; self.generation = generation
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case repository, filename, alias, contextSize, gpuLayers, flashAttention
+        case kvCacheKeyType, kvCacheValueType, cacheReuse, batchSize, ubatchSize
+        case threads, threadsBatch, generation
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        repository = try c.decode(String.self, forKey: .repository)
+        filename = try c.decode(String.self, forKey: .filename)
+        alias = try c.decode(String.self, forKey: .alias)
+        contextSize = try c.decode(Int.self, forKey: .contextSize)
+        gpuLayers = try c.decode(Int.self, forKey: .gpuLayers)
+        flashAttention = try c.decodeIfPresent(Bool.self, forKey: .flashAttention) ?? true
+        kvCacheKeyType = try c.decodeIfPresent(String.self, forKey: .kvCacheKeyType) ?? "q8_0"
+        kvCacheValueType = try c.decodeIfPresent(String.self, forKey: .kvCacheValueType) ?? "q8_0"
+        cacheReuse = try c.decodeIfPresent(Int.self, forKey: .cacheReuse) ?? 256
+        batchSize = try c.decodeIfPresent(Int.self, forKey: .batchSize) ?? 512
+        ubatchSize = try c.decodeIfPresent(Int.self, forKey: .ubatchSize) ?? 256
+        threads = try c.decodeIfPresent(Int.self, forKey: .threads) ?? 0
+        threadsBatch = try c.decodeIfPresent(Int.self, forKey: .threadsBatch) ?? 0
+        generation = try c.decodeIfPresent(GenerationProfile.self, forKey: .generation) ?? .balanced
+    }
 }
 
 struct OllamaLaunchConfiguration: Codable, Equatable, Sendable {
@@ -99,6 +148,41 @@ struct OllamaLaunchConfiguration: Codable, Equatable, Sendable {
     var contextLength: Int
     var parallelRequests: Int
     var maxLoadedModels: Int
+    var chatGeneration: GenerationProfile
+    var autocompleteGeneration: GenerationProfile
+
+    init(
+        chatModel: String, autocompleteModel: String, embeddingModel: String,
+        flashAttention: Bool, kvCacheType: String, contextLength: Int,
+        parallelRequests: Int, maxLoadedModels: Int,
+        chatGeneration: GenerationProfile = .balanced,
+        autocompleteGeneration: GenerationProfile = .autocompleteBalanced
+    ) {
+        self.chatModel = chatModel; self.autocompleteModel = autocompleteModel
+        self.embeddingModel = embeddingModel; self.flashAttention = flashAttention
+        self.kvCacheType = kvCacheType; self.contextLength = contextLength
+        self.parallelRequests = parallelRequests; self.maxLoadedModels = maxLoadedModels
+        self.chatGeneration = chatGeneration; self.autocompleteGeneration = autocompleteGeneration
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case chatModel, autocompleteModel, embeddingModel, flashAttention, kvCacheType
+        case contextLength, parallelRequests, maxLoadedModels, chatGeneration, autocompleteGeneration
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        chatModel = try c.decode(String.self, forKey: .chatModel)
+        autocompleteModel = try c.decode(String.self, forKey: .autocompleteModel)
+        embeddingModel = try c.decode(String.self, forKey: .embeddingModel)
+        flashAttention = try c.decodeIfPresent(Bool.self, forKey: .flashAttention) ?? true
+        kvCacheType = try c.decodeIfPresent(String.self, forKey: .kvCacheType) ?? "q8_0"
+        contextLength = try c.decodeIfPresent(Int.self, forKey: .contextLength) ?? 16_384
+        parallelRequests = try c.decodeIfPresent(Int.self, forKey: .parallelRequests) ?? 2
+        maxLoadedModels = try c.decodeIfPresent(Int.self, forKey: .maxLoadedModels) ?? 1
+        chatGeneration = try c.decodeIfPresent(GenerationProfile.self, forKey: .chatGeneration) ?? .balanced
+        autocompleteGeneration = try c.decodeIfPresent(GenerationProfile.self, forKey: .autocompleteGeneration) ?? .autocompleteBalanced
+    }
 }
 
 struct ServiceLaunchConfiguration: Codable, Equatable, Sendable {
@@ -212,78 +296,4 @@ struct ServiceFailure: Identifiable, Sendable {
     let timestamp: Date
     let logURL: URL
     var id: String { "\(serviceID.rawValue)-\(timestamp.timeIntervalSince1970)" }
-}
-
-enum ControllerPolicy {
-    static let reserveBytes: UInt64 = 14 * 1_073_741_824
-    static let maxModelBytes: UInt64 = 20 * 1_073_741_824
-    static let kvCacheBytesPerToken: UInt64 = 48 * 1_024
-    static let supportedArchitectures = [
-        "llama", "qwen2", "qwen3", "mistral", "gemma", "phi3", "bert", "nomic-bert", "gpt-oss"
-    ]
-
-    static func validPort(_ port: Int) -> Bool { (1024...65535).contains(port) }
-    static func fits(sizeBytes: Int64?, physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Bool {
-        guard let sizeBytes, sizeBytes > 0 else { return false }
-        let available = physicalMemory > reserveBytes ? physicalMemory - reserveBytes : 0
-        return UInt64(sizeBytes) <= min(maxModelBytes, available)
-    }
-
-    static func compatibility(sizeBytes: Int64?, architectureKnown: Bool, gated: Bool, multimodal: Bool, cloudOnly: Bool, physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Compatibility {
-        if gated || multimodal || cloudOnly { return .incompatible }
-        guard architectureKnown, sizeBytes != nil else { return .unverified }
-        return fits(sizeBytes: sizeBytes, physicalMemory: physicalMemory) ? .compatible : .incompatible
-    }
-
-
-    static func memoryAssessment(
-        modelBytes: [Int64]?,
-        contextSize: Int,
-        parallelRequests: Int = 1,
-        loadedModelCount: Int = 1,
-        physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
-    ) -> MemoryAssessment {
-        let budget = physicalMemory > reserveBytes ? physicalMemory - reserveBytes : 0
-        guard let modelBytes, !modelBytes.isEmpty, modelBytes.allSatisfy({ $0 > 0 }) else {
-            return .init(
-                severity: .unverified,
-                estimatedBytes: nil,
-                usableBudgetBytes: budget,
-                message: "Memory use is unverified because model-size metadata is unavailable."
-            )
-        }
-
-        let weights = modelBytes.reduce(UInt64(0)) { $0 + UInt64($1) }
-        let contexts = UInt64(max(contextSize, 0))
-        let requests = UInt64(max(parallelRequests, 1))
-        let loaded = UInt64(max(loadedModelCount, 1))
-        let kvCache = contexts.multipliedReportingOverflow(by: kvCacheBytesPerToken).partialValue
-            .multipliedReportingOverflow(by: requests).partialValue
-            .multipliedReportingOverflow(by: loaded).partialValue
-        let estimated = weights.addingReportingOverflow(kvCache).partialValue
-        let severity: MemoryRiskSeverity
-        if budget == 0 || estimated > budget {
-            severity = .high
-        } else if Double(estimated) / Double(budget) >= 0.8 {
-            severity = .caution
-        } else {
-            severity = .safe
-        }
-
-        let estimateText = ByteCountFormatter.string(fromByteCount: Int64(clamping: estimated), countStyle: .memory)
-        let budgetText = ByteCountFormatter.string(fromByteCount: Int64(clamping: budget), countStyle: .memory)
-        let message: String
-        switch severity {
-        case .safe:
-            let headroom = ByteCountFormatter.string(fromByteCount: Int64(clamping: budget - estimated), countStyle: .memory)
-            message = "Estimated memory: \(estimateText) of \(budgetText), with \(headroom) of headroom."
-        case .caution:
-            message = "Estimated memory: \(estimateText) of \(budgetText). Performance may degrade under memory pressure."
-        case .high:
-            message = "Estimated memory: \(estimateText), above the \(budgetText) safe budget. The Mac may swap heavily or the service may fail."
-        case .unverified:
-            message = "Memory use is unverified."
-        }
-        return .init(severity: severity, estimatedBytes: estimated, usableBudgetBytes: budget, message: message)
-    }
 }

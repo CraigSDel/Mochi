@@ -140,6 +140,20 @@ final class ModelOptionBuilderTests: XCTestCase {
         XCTAssertTrue(ModelOptionBuilder.options(runtime: .llamaCpp, role: .chat, installed: [], recommendations: [blocked, incomplete]).isEmpty)
     }
 
+    func testQueuedHuggingFaceRecommendationAppearsInLlamaPicker() {
+        let queued = ModelRecommendation(
+            id: "hf:owner/queued", name: "owner/queued", source: "Hugging Face", runtime: "llama.cpp", role: .chat,
+            quantization: "Q4_K_M", sizeBytes: 1, context: "test", license: "test",
+            compatibility: .compatible, rationale: "queued", updatedAt: nil,
+            repository: "owner/queued", filename: "queued-Q4_K_M.gguf"
+        )
+
+        let options = ModelOptionBuilder.options(runtime: .llamaCpp, role: .chat, installed: [], recommendations: [queued])
+
+        XCTAssertEqual(options.map(\.name), ["owner/queued"])
+        XCTAssertEqual(options.first?.availability, .catalog)
+    }
+
     func testInstalledOnlyExcludesCatalogForBothRuntimes() {
         let ollama = ModelRecommendation(id: "ollama", name: "ollama", source: "Fixture", runtime: "Ollama", role: .chat, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: .compatible, rationale: "test", updatedAt: nil, modelName: "ollama:latest")
         let llama = ModelRecommendation(id: "llama", name: "llama", source: "Fixture", runtime: "llama.cpp", role: .chat, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: .compatible, rationale: "test", updatedAt: nil, repository: "owner/llama", filename: "llama.gguf")

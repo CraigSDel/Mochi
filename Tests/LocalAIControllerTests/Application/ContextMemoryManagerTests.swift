@@ -22,9 +22,10 @@ final class ContextMemoryManagerTests: XCTestCase {
         XCTAssertEqual(reloaded.configuration(for: .autocomplete).llama?.contextSize, 8_192)
     }
 
-    func testKnownInstalledCustomModelGetsVerifiedAssessment() {
+    func testKnownInstalledCustomModelGetsVerifiedAssessment() async {
         let model = DiscoveredModel(runtime: .llamaCpp, name: "custom", repository: "owner/repo", filename: "model.gguf", sizeBytes: 2_000_000_000, roleHint: .chat, supportsVision: false)
         let (manager, _, _) = makeManager(models: [model])
+        await manager.refreshModelInventory()
         var config = manager.configuration(for: .llamaChat)
         config.llama?.repository = "owner/repo"
         config.llama?.filename = "model.gguf"

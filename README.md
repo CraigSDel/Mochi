@@ -235,6 +235,7 @@ The package is built and tested with Swift Package Manager:
 swift build                    # build the app
 swift test                     # run the test suite
 ./check_code_line_lengths.sh   # 300-line authored-file quality gate
+./scripts/validate_repository.sh # full local validation and contract checks
 ```
 
 Run `swift test --filter <TestClassName>` to iterate on a focused test. `./build_app.sh` (see [Build the app](#build-the-app)) produces the signed `dist/Local AI Controller.app` bundle.
@@ -250,6 +251,7 @@ Detailed guidance lives in [`docs/`](docs/):
 - [`security-and-networking.md`](docs/security-and-networking.md) — bind modes and exposure controls.
 - [`testing.md`](docs/testing.md) — test conventions and pre-handoff gates.
 - [`agentic-workflows.md`](docs/agentic-workflows.md) — how agents should work in this repository.
+- [`engineering-practices-audit.md`](docs/engineering-practices-audit.md) — applicability and status of the 50 engineering practices.
 
 `how_to.md` covers network and editor client setup in more depth.
 

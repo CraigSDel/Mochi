@@ -16,9 +16,9 @@ struct LocalAIControllerApp: App {
                 .tint(AppTheme.accent)
                 .onAppear {
                     appDelegate.manager = manager
-                    memoryMonitor.start(serviceRoots: { [weak serviceManager = manager] in
+                    Task { await memoryMonitor.start(serviceRoots: { [weak serviceManager = manager] in
                         serviceManager?.managedProcessMemoryRoots ?? [:]
-                    })
+                    }) }
                 }
         }
         MenuBarExtra("Local AI", systemImage: menuIcon) {

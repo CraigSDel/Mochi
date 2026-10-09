@@ -110,6 +110,19 @@ final class HuggingFaceProviderTests: XCTestCase {
         XCTAssertEqual(Set(fetcher.timeouts), [HuggingFaceProvider.requestTimeout])
     }
 
+    func testSearchUsesEncodedQueryAndResolvesDetails() async throws {
+        let fetcher = StubFetcher()
+        fetcher.stub(pathSuffix: "/api/models", data: Data(("[" + summary(id: "owner/qwen3-model") + "]").utf8))
+        fetcher.stub(pathSuffix: "/api/models/owner/qwen3-model", data: Data(sizedDetail(for: "owner/qwen3-model").utf8))
+
+        let results = try await HuggingFaceProvider(fetcher: fetcher).search(query: "qwen 3")
+
+        let components = try XCTUnwrap(fetcher.requestedURLs.first.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) })
+        XCTAssertEqual(components.queryItems?.first(where: { $0.name == "search" })?.value, "qwen 3")
+        XCTAssertEqual(results.map(\.name), ["owner/qwen3-model"])
+        XCTAssertEqual(results.first?.compatibility, .compatible)
+    }
+
     func testMmprojFileAloneMarksAModelMultimodal() {
         let model = try? JSONDecoder().decode(HFModel.self, from: Data(summary(id: "owner/qwen3-vl", siblings: [
             .init(rfilename: "model-Q4_K_M.gguf", size: 4_000_000_000),

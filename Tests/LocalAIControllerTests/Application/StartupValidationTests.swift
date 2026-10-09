@@ -147,7 +147,7 @@ final class StartupValidationTests: XCTestCase {
         XCTAssertNil(records.first?.bindMode)
     }
 
-    func testMemoryRootsRequireRunningPIDAndMatchingLaunchCommand() throws {
+    func testMemoryRootsRequireRunningPIDAndMatchingLaunchCommand() async throws {
         let (directory, probe, defaults) = context()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let record = ManagedProcessRecord(
@@ -163,16 +163,20 @@ final class StartupValidationTests: XCTestCase {
         probe.processRunningCheck = { $0 == 123 }
         probe.occupiedPorts.insert(11437)
         let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
+        await manager.refreshStatuses()
 
         XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .owned(pid: 123))
         XCTAssertEqual(manager.managedProcessIDs[.llamaChat], 123)
         XCTAssertEqual(manager.managedProcessMemoryRoots[.autocomplete], .noOwnedPID(reason: "No launch record"))
 
         probe.processRunningCheck = { _ in false }
+        await manager.refreshStatuses()
         XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .noOwnedPID(reason: "Recorded PID 123 is not running"))
 
         probe.processRunningCheck = { _ in true }
         probe.processCommandValue = "unrelated-process"
+        try JSONEncoder().encode([record]).write(to: directory.appendingPathComponent("processes.json"))
+        await manager.refreshStatuses()
         XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .noOwnedPID(reason: "Recorded PID 123 command does not match the expected runtime"))
     }
 

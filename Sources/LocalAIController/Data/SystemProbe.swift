@@ -2,31 +2,29 @@ import Foundation
 import Darwin
 import SystemConfiguration
 
-@MainActor
-protocol SystemProbing: AnyObject {
+protocol SystemProbing: AnyObject, Sendable {
     var supportDirectory: URL { get }
     var physicalMemory: UInt64 { get }
-    func commandPath(_ command: String) -> String?
-    func isPortListening(_ port: Int) -> Bool
-    func tailscaleIP() -> String?
-    func wifiIP() -> String?
-    func localNetworkIP() -> String?
-    func availableDiskBytes() -> Int64
-    func scriptURL(named name: String) -> URL?
-    func isProcessRunning(_ pid: Int32) -> Bool
-    func processCommand(_ pid: Int32) -> String
+    func commandPath(_ command: String) async -> String?
+    func isPortListening(_ port: Int) async -> Bool
+    func tailscaleIP() async -> String?
+    func wifiIP() async -> String?
+    func localNetworkIP() async -> String?
+    func availableDiskBytes() async -> Int64
+    func scriptURL(named name: String) async -> URL?
+    func isProcessRunning(_ pid: Int32) async -> Bool
+    func processCommand(_ pid: Int32) async -> String
     func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool
     func tailscaleDiagnostic() async -> TailscaleDiagnostic
-    func discoverModels() -> [DiscoveredModel]
+    func discoverModels() async -> [DiscoveredModel]
 }
 
-@MainActor
-final class LiveSystemProbe: SystemProbing {
+final class LiveSystemProbe: SystemProbing, @unchecked Sendable {
     private let fileManager: FileManager
     init(fileManager: FileManager = .default) { self.fileManager = fileManager }
     var supportDirectory: URL { fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Local AI Controller") }
     var physicalMemory: UInt64 { ProcessInfo.processInfo.physicalMemory }
-    func commandPath(_ command: String) -> String? {
+    func commandPath(_ command: String) async -> String? {
         guard !command.isEmpty else { return nil }
         for directory in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"] {
             let candidate = URL(fileURLWithPath: directory).appendingPathComponent(command).path
@@ -34,9 +32,13 @@ final class LiveSystemProbe: SystemProbing {
         }
         return nil
     }
-    func isPortListening(_ port: Int) -> Bool { !(run("/usr/sbin/lsof", ["-nP", "-tiTCP:\(port)", "-sTCP:LISTEN"]) ?? "").isEmpty }
-    func tailscaleIP() -> String? { guard let executable = commandPath("tailscale") else { return nil }; return run(executable, ["ip", "-4"])?.split(separator: "\n").first.map(String.init) }
-    func wifiIP() -> String? {
+    func isPortListening(_ port: Int) async -> Bool { !(await run("/usr/sbin/lsof", ["-nP", "-tiTCP:\(port)", "-sTCP:LISTEN"]) ?? "").isEmpty }
+    func tailscaleIP() async -> String? { guard let executable = await commandPath("tailscale") else { return nil }; return await run(executable, ["ip", "-4"])?.split(separator: "\n").first.map(String.init) }
+    func wifiIP() async -> String? {
+        await Task.detached(priority: .utility) { Self.liveWiFiIP() }.value
+    }
+
+    private nonisolated static func liveWiFiIP() -> String? {
         let interfaces = SCNetworkInterfaceCopyAll() as? [SCNetworkInterface] ?? []
         for interface in interfaces {
             guard let interfaceType = SCNetworkInterfaceGetInterfaceType(interface),
@@ -47,11 +49,11 @@ final class LiveSystemProbe: SystemProbing {
         }
         return nil
     }
-    func localNetworkIP() -> String? {
-        if let wifi = wifiIP() { return wifi }
-        return interfaceIPv4(named: nil)
+    func localNetworkIP() async -> String? {
+        if let wifi = await wifiIP() { return wifi }
+        return await Task.detached(priority: .utility) { Self.interfaceIPv4(named: nil) }.value
     }
-    private func interfaceIPv4(named requiredName: String?) -> String? {
+    private nonisolated static func interfaceIPv4(named requiredName: String?) -> String? {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let first = interfaces else { return nil }
         defer { freeifaddrs(interfaces) }
@@ -69,30 +71,47 @@ final class LiveSystemProbe: SystemProbing {
         }
         return nil
     }
-    func availableDiskBytes() -> Int64 {
+    func availableDiskBytes() async -> Int64 {
         guard let value = try? supportDirectory.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage else { return 0 }
         return Int64(value)
     }
-    func scriptURL(named name: String) -> URL? {
+    func scriptURL(named name: String) async -> URL? {
         if let url = Bundle.main.resourceURL?.appendingPathComponent(name), fileManager.fileExists(atPath: url.path) { return url }
         let local = URL(fileURLWithPath: fileManager.currentDirectoryPath).appendingPathComponent(name)
         return fileManager.fileExists(atPath: local.path) ? local : nil
     }
-    func isProcessRunning(_ pid: Int32) -> Bool { kill(pid, 0) == 0 }
-    func processCommand(_ pid: Int32) -> String { run("/bin/ps", ["-p", String(pid), "-o", "command="]) ?? "" }
+    func isProcessRunning(_ pid: Int32) async -> Bool {
+        await Task.detached(priority: .utility) { kill(pid, 0) == 0 }.value
+    }
+    func processCommand(_ pid: Int32) async -> String { await run("/bin/ps", ["-p", String(pid), "-o", "command="]) ?? "" }
     func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool {
         let path = id == .ollama ? "/api/tags" : "/health"
         guard let url = URL(string: "http://\(host):\(port)\(path)") else { return false }
         var request = URLRequest(url: url); request.timeoutInterval = 1
         do { let (_, response) = try await URLSession.shared.data(for: request); return (200..<500).contains((response as? HTTPURLResponse)?.statusCode ?? 0) } catch { return false }
     }
-    func discoverModels() -> [DiscoveredModel] { ModelInventoryScanner(fileManager: fileManager).scan() }
-    private func run(_ executable: String, _ arguments: [String]) -> String? {
-        guard fileManager.isExecutableFile(atPath: executable) else { return nil }
-        let process = Process(); let pipe = Pipe(); process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments; process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
-        do { try process.run(); process.waitUntilExit() } catch { return nil }
-        guard process.terminationStatus == 0 else { return nil }
-        return String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    func discoverModels() async -> [DiscoveredModel] {
+        await Task.detached(priority: .utility) { [fileManager] in
+            ModelInventoryScanner(fileManager: fileManager).scan()
+        }.value
+    }
+    private func run(_ executable: String, _ arguments: [String]) async -> String? {
+        let isExecutable = fileManager.isExecutableFile(atPath: executable)
+        guard isExecutable else { return nil }
+        return await Self.runDetached(executable, arguments)
+    }
+
+    private nonisolated static func runDetached(_ executable: String, _ arguments: [String]) async -> String? {
+        await Task.detached(priority: .utility) {
+            let process = Process(); let pipe = Pipe()
+            process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
+            process.standardOutput = pipe; process.standardError = FileHandle.nullDevice
+            do { try process.run() } catch { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return nil }
+            return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }.value
     }
 }
 

@@ -23,6 +23,7 @@ struct PerformanceGuidance: Identifiable, Equatable, Sendable {
         parallelRequests: Int = 1,
         loadedModelCount: Int = 1,
         kvCacheType: String? = nil,
+        cacheReuse: Int = 256,
         physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
     ) -> Self {
         let assessment = ControllerPolicy.memoryAssessment(
@@ -30,6 +31,7 @@ struct PerformanceGuidance: Identifiable, Equatable, Sendable {
             contextSize: contextSize,
             parallelRequests: parallelRequests,
             loadedModelCount: loadedModelCount,
+            cacheReuse: cacheReuse,
             physicalMemory: physicalMemory
         )
         var recommendations = [assessment.message]
@@ -58,6 +60,7 @@ struct PerformanceGuidance: Identifiable, Equatable, Sendable {
             recommendations.append("Ollama KV cache: \(cache). Lower-precision KV caching can reduce memory use for long contexts when supported by the runtime.")
         } else {
             recommendations.append("llama.cpp context length is the main memory control exposed by this controller; lower it before increasing model size.")
+            if cacheReuse > 256 { recommendations.append("llama.cpp cache reuse is set aggressively; it can improve repeated prompts but may increase memory pressure.") }
         }
 
         recommendations.append("For higher throughput, consider a smaller or mixture-of-experts model; dense models read all model weights for each generated token.")
@@ -116,6 +119,7 @@ enum PerformanceGuidanceBuilder {
                 )].compactMap { $0 },
                 quantization: configuration.filename,
                 contextSize: configuration.contextSize,
+                cacheReuse: configuration.cacheReuse,
                 physicalMemory: physicalMemory
             )
         }

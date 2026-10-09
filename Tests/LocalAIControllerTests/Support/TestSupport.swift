@@ -1,8 +1,7 @@
 import Foundation
 @testable import LocalAIController
 
-@MainActor
-final class FakeProbe: SystemProbing {
+final class FakeProbe: SystemProbing, @unchecked Sendable {
     let supportDirectory: URL
     var physicalMemory: UInt64 = 36 * 1_073_741_824
     var commands: [String: String] = ["tailscale": "/fake/tailscale", "llama-server": "/fake/llama-server", "ollama": "/fake/ollama"]
@@ -23,18 +22,36 @@ final class FakeProbe: SystemProbing {
     var diagnostic = TailscaleDiagnostic(status: .direct, peer: "test-peer", detail: "direct", checkedAt: Date())
     var diagnosticCallCount = 0
     init(directory: URL) { supportDirectory = directory }
-    func commandPath(_ command: String) -> String? { commands[command] }
-    func isPortListening(_ port: Int) -> Bool { portListeningCheck?(port) ?? occupiedPorts.contains(port) }
-    func tailscaleIP() -> String? { tailnetIP }
-    func wifiIP() -> String? { wifiIPv4 }
-    func localNetworkIP() -> String? { lanIP }
-    func availableDiskBytes() -> Int64 { diskBytes }
-    func scriptURL(named name: String) -> URL? { script }
-    func isProcessRunning(_ pid: Int32) -> Bool { processRunningCheck?(pid) ?? processRunning }
-    func processCommand(_ pid: Int32) -> String { processCommandValue }
-    func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool { lastHealthPort = port; lastHealthHost = host; return healthy }
-    func tailscaleDiagnostic() async -> TailscaleDiagnostic { diagnosticCallCount += 1; return diagnostic }
-    func discoverModels() -> [DiscoveredModel] { discoveredModels }
+    func commandPath(_ command: String) async -> String? { await MainActor.run { commands[command] } }
+    func isPortListening(_ port: Int) async -> Bool {
+        await MainActor.run { portListeningCheck?(port) ?? occupiedPorts.contains(port) }
+    }
+    func tailscaleIP() async -> String? { await MainActor.run { tailnetIP } }
+    func wifiIP() async -> String? { await MainActor.run { wifiIPv4 } }
+    func localNetworkIP() async -> String? { await MainActor.run { lanIP } }
+    func availableDiskBytes() async -> Int64 { await MainActor.run { diskBytes } }
+    func scriptURL(named name: String) async -> URL? { await MainActor.run { script } }
+    func isProcessRunning(_ pid: Int32) async -> Bool {
+        await MainActor.run { processRunningCheck?(pid) ?? processRunning }
+    }
+    func processCommand(_ pid: Int32) async -> String {
+        await MainActor.run {
+            if processCommandValue != "bash start_llama_network.sh" { return processCommandValue }
+            if let data = try? Data(contentsOf: supportDirectory.appendingPathComponent("processes.json")),
+               let records = try? JSONDecoder().decode([ManagedProcessRecord].self, from: data),
+               let record = records.first(where: { $0.pid == pid }) {
+                return record.expectedCommand
+            }
+            return processCommandValue
+        }
+    }
+    func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool {
+        await MainActor.run { lastHealthPort = port; lastHealthHost = host; return healthy }
+    }
+    func tailscaleDiagnostic() async -> TailscaleDiagnostic {
+        await MainActor.run { diagnosticCallCount += 1; return diagnostic }
+    }
+    func discoverModels() async -> [DiscoveredModel] { await MainActor.run { discoveredModels } }
 }
 
 @MainActor
@@ -56,6 +73,7 @@ final class StubFetcher: HTTPFetching, @unchecked Sendable {
     private let lock = NSLock()
     private var responses: [String: Result<HTTPResponse, Error>] = [:]
     private(set) var requestedPaths: [String] = []
+    private(set) var requestedURLs: [URL] = []
     private(set) var timeouts: [TimeInterval] = []
 
     init() {}
@@ -75,6 +93,7 @@ final class StubFetcher: HTTPFetching, @unchecked Sendable {
     func fetch(_ url: URL, timeout: TimeInterval) async throws -> HTTPResponse {
         lock.withLock {
             requestedPaths.append(url.path)
+            requestedURLs.append(url)
             timeouts.append(timeout)
         }
         let match = lock.withLock { responses.first { url.path.hasSuffix($0.key) }?.value }

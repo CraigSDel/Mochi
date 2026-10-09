@@ -69,6 +69,22 @@ final class LayerBoundaryTests: XCTestCase {
         }
     }
 
+    func test_memoryObservationImplementationIsOutsidePresentation() throws {
+        let presentation = try String(
+            contentsOf: URL(fileURLWithPath: "Sources/LocalAIController/Presentation/MemoryMonitoring.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(presentation.contains("import Darwin"))
+        XCTAssertFalse(presentation.contains("Task.detached"))
+
+        let data = try String(
+            contentsOf: URL(fileURLWithPath: "Sources/LocalAIController/Data/MemoryProbe.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(data.contains("final class LiveMemoryProbe"))
+        XCTAssertTrue(data.contains("protocol MemoryProbing"))
+    }
+
     private func swiftFiles(in relativePath: String) throws -> [URL] {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent(relativePath)

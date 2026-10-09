@@ -104,7 +104,7 @@ private struct DiagnosticCommandResult: Sendable {
 extension LiveSystemProbe {
     func tailscaleDiagnostic() async -> TailscaleDiagnostic {
         let now = Date()
-        guard let executable = commandPath("tailscale") else { return .init(status: .missingCLI, peer: nil, detail: "The tailscale command was not found.", checkedAt: now) }
+        guard let executable = await commandPath("tailscale") else { return .init(status: .missingCLI, peer: nil, detail: "The tailscale command was not found.", checkedAt: now) }
         guard let status = await Self.runDiagnosticCommand(executable, ["status", "--json"]) else { return .init(status: .commandFailure, peer: nil, detail: "Could not run tailscale status --json.", checkedAt: now) }
         guard status.status == 0 else { return .init(status: .commandFailure, peer: nil, detail: status.output, checkedAt: now) }
         let parsed: (connected: Bool, peer: TailscalePeer?)

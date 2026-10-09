@@ -145,13 +145,14 @@ struct ServiceConfigurationEditor: View {
             }
             .disabled(locked)
             .appCard()
+            PerformanceTuningEditor(serviceID: serviceID, manager: manager)
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     SectionHeading("Model", subtitle: configuration.llama != nil ? "Choose a cached or recommended Hugging Face GGUF." : "Assign installed or catalog Ollama models by role.", symbol: "shippingbox")
                     Spacer()
                     CatalogVisibilityPicker(includeCatalog: $includeCatalog)
-                    Button { manager.refreshModelInventory() } label: { Label("Rescan", systemImage: "arrow.clockwise") }
+                    Button { Task { await manager.refreshModelInventory() } } label: { Label("Rescan", systemImage: "arrow.clockwise") }
                         .buttonStyle(AppleSecondaryButtonStyle()).help("Rescan downloaded models")
                 }
                 if configuration.llama != nil { llamaFields } else if configuration.ollama != nil { ollamaFields }
@@ -202,9 +203,6 @@ struct ServiceConfigurationEditor: View {
     }
     private var llamaAdvanced: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ConfigurationField("GPU layers") {
-                styledNumberField("GPU layers", value: llamaBinding(\.gpuLayers))
-            }
             DisclosureGroup("Custom model") {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Hugging Face repository", text: llamaBinding(\.repository))
@@ -271,14 +269,13 @@ struct ServiceConfigurationEditor: View {
     @ViewBuilder
     private var contextLengthControl: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if configuration.llama != nil {
-                ContextSizeSlider(value: llamaBinding(\.contextSize), assessment: manager.memoryAssessment(for: serviceID))
-            } else if configuration.ollama != nil {
-                ContextSizeSlider(value: ollamaBinding(\.contextLength), assessment: manager.memoryAssessment(for: serviceID))
+            if configuration.ollama != nil {
+                ConfigurationField("Ollama server context") {
+                    ContextSizeSlider(value: ollamaBinding(\.contextLength), assessment: manager.memoryAssessment(for: serviceID))
+                }
+                Text("This setting applies to the shared Ollama server. Model generation settings are configured below.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
-            Text("Increase this when a request exceeds the current context limit. Larger values use more memory.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
         .padding(.top, 4)
     }

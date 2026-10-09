@@ -3,13 +3,15 @@ import XCTest
 
 @MainActor
 final class NetworkFallbackTests: XCTestCase {
-    func testWiFiAvailabilityComesFromProbe() {
+    func testWiFiAvailabilityComesFromProbe() async {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let probe = FakeProbe(directory: directory)
         let manager = ServiceManager(probe: probe, defaults: UserDefaults(suiteName: UUID().uuidString)!, startTimer: false)
-        XCTAssertEqual(manager.wifiIP(), "192.168.1.10")
+        let initialIP = await manager.wifiIP()
+        XCTAssertEqual(initialIP, "192.168.1.10")
         probe.wifiIPv4 = nil
-        XCTAssertNil(manager.wifiIP())
+        let missingIP = await manager.wifiIP()
+        XCTAssertNil(missingIP)
     }
 
     func testWiFiFallbackRecordsLANAndDisplaysWiFiWithoutChangingSavedMode() async throws {

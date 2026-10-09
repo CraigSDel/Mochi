@@ -3,12 +3,12 @@ import XCTest
 
 @MainActor
 final class MemoryMonitorTimelineTests: XCTestCase {
-    func testCaptureKeepsChartTimelineStrictlyIncreasingAfterModalPause() {
+    func testCaptureKeepsChartTimelineStrictlyIncreasingAfterModalPause() async {
         let monitor = MemoryMonitor(probe: ModalPauseMemoryProbe())
 
-        monitor.capture(at: Date(timeIntervalSince1970: 10), servicePIDs: [:])
-        monitor.capture(at: Date(timeIntervalSince1970: 12), servicePIDs: [:])
-        monitor.capture(at: Date(timeIntervalSince1970: 11), servicePIDs: [:])
+        await monitor.capture(at: Date(timeIntervalSince1970: 10), servicePIDs: [:])
+        await monitor.capture(at: Date(timeIntervalSince1970: 12), servicePIDs: [:])
+        await monitor.capture(at: Date(timeIntervalSince1970: 11), servicePIDs: [:])
 
         let timestamps = monitor.samples.map(\.timestamp)
         XCTAssertEqual(timestamps.count, 3)
@@ -19,9 +19,9 @@ final class MemoryMonitorTimelineTests: XCTestCase {
 
 @MainActor
 private final class ModalPauseMemoryProbe: MemoryProbing {
-    func systemMemory() -> SystemMemoryReading? {
+    func systemMemory() async -> SystemMemoryReading? {
         .init(usedBytes: 1, totalBytes: 2)
     }
 
-    func processTreePhysicalFootprint(rootPID: Int32) -> UInt64? { nil }
+    func processTreePhysicalFootprint(rootPID: Int32) async -> UInt64? { nil }
 }
