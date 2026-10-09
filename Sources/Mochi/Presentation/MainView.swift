@@ -87,7 +87,7 @@ struct MainView: View {
       }
     }
     .listStyle(.sidebar)
-    .navigationSplitViewColumnWidth(min: 190, ideal: 220)
+    .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 280)
   }
 
   @ViewBuilder private var detail: some View {

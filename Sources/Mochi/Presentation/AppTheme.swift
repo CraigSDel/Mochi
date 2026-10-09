@@ -18,21 +18,19 @@ enum AppTheme {
     light: NSColor(red: 0.84, green: 0.75, blue: 0.98, alpha: 1),
     dark: NSColor(red: 0.33, green: 0.25, blue: 0.48, alpha: 1)
   )
-  static let accent = adaptiveColor(
-    light: NSColor(red: 0, green: 0.443, blue: 0.89, alpha: 1),
-    dark: NSColor(red: 0.039, green: 0.518, blue: 1, alpha: 1)
-  )
+  // Use Apple's semantic system blue so the app matches macOS in both modes.
+  static let accent = Color(nsColor: .systemBlue)
   static let accentPressed = adaptiveColor(
     light: NSColor(red: 0, green: 0.333, blue: 0.776, alpha: 1),
     dark: NSColor(red: 0, green: 0.408, blue: 0.86, alpha: 1)
   )
   static let surface = adaptiveColor(
-    light: NSColor(red: 0.992, green: 0.973, blue: 0.949, alpha: 1),
-    dark: NSColor(red: 0.185, green: 0.17, blue: 0.17, alpha: 1)
+    light: NSColor(red: 0.985, green: 0.982, blue: 0.978, alpha: 1),
+    dark: NSColor(red: 0.145, green: 0.155, blue: 0.17, alpha: 1)
   )
   static let pageBackground = adaptiveColor(
-    light: NSColor(red: 1, green: 0.988, blue: 0.97, alpha: 1),
-    dark: NSColor(red: 0.12, green: 0.105, blue: 0.105, alpha: 1))
+    light: NSColor(red: 0.975, green: 0.978, blue: 0.985, alpha: 1),
+    dark: NSColor(red: 0.085, green: 0.095, blue: 0.11, alpha: 1))
   static let primaryText = Color(nsColor: .labelColor)
   static let secondaryText = Color(nsColor: .secondaryLabelColor)
   static let tertiaryText = Color(nsColor: .tertiaryLabelColor)
@@ -41,7 +39,12 @@ enum AppTheme {
 
   static var mochiBackdrop: LinearGradient {
     LinearGradient(
-      colors: [pageBackground, mochiPink.opacity(0.16), mochiLavender.opacity(0.12), pageBackground],
+      colors: [
+        pageBackground,
+        mochiPink.opacity(0.045),
+        mochiLavender.opacity(0.035),
+        pageBackground
+      ],
       startPoint: .topLeading,
       endPoint: .bottomTrailing
     )
@@ -66,11 +69,11 @@ enum AppTheme {
 }
 
 struct AppCardModifier: ViewModifier {
-  var padding: CGFloat = 18
+  var padding: CGFloat = 20
   func body(content: Content) -> some View {
     content.padding(padding).background(
       AppTheme.surface,
-      in: RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
+      in: RoundedRectangle(cornerRadius: 16, style: .continuous))
   }
 }
 

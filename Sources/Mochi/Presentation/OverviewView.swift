@@ -57,7 +57,7 @@ struct OverviewView: View {
           }
         }
       }
-      .padding(.horizontal, 36).padding(.vertical, 32)
+      .padding(.horizontal, 28).padding(.vertical, 26)
     }
     .background(AppTheme.mochiBackdrop)
   }
