@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 extension ServiceManager {
   func modelRole(for serviceID: ServiceID) -> RecommendationRole {
     switch serviceID {
@@ -63,7 +64,7 @@ extension ServiceManager {
   func deleteModel(_ model: DiscoveredModel) async throws {
     let assigned = modelMetadata[model.id]?.assignedServices ?? []
     let configured = ServiceID.allCases.filter { serviceUsesModel(model, in: $0) }
-    guard !assigned.contains(where: isConfigurationLocked),
+    guard !assigned.contains(where: { isConfigurationLocked($0) }),
       configured.allSatisfy({ !isConfigurationLocked($0) })
     else {
       throw ModelManagementError.activeAssignment

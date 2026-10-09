@@ -40,7 +40,7 @@ struct ModelLibraryRow: View {
       }
       HStack(spacing: 8) {
         Text("Assign to:").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-        ForEach(services.filter(compatible)) { service in
+        ForEach(services.filter { service in compatible(service) }) { service in
           HStack(spacing: 5) {
             Toggle(
               service.definition.name,
