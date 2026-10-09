@@ -9,7 +9,7 @@ struct SetupGuideView: View {
       VStack(alignment: .leading, spacing: 22) {
         PageHeader(
           eyebrow: "Getting started",
-          title: "Set up your local AI stack",
+          title: "Set up your Mochi stack",
           subtitle: "Follow these steps to prepare your Mac and make your first request.",
           symbol: "wand.and.stars"
         )

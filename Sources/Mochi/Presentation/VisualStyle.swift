@@ -4,20 +4,36 @@ struct BrandMark: View {
   var size: CGFloat = 34
 
   var body: some View {
-    ZStack {
-      Circle()
-        .fill(AppTheme.mochiPink)
-      Circle()
-        .fill(AppTheme.mochiCream)
-        .frame(width: size * 0.62, height: size * 0.62)
-        .offset(y: size * 0.08)
-      Circle()
-        .fill(AppTheme.mochiMatcha)
-        .frame(width: size * 0.16, height: size * 0.16)
-        .offset(x: size * 0.18, y: -size * 0.19)
+    Group {
+      if let appIcon {
+        Image(nsImage: appIcon)
+          .resizable()
+          .scaledToFit()
+      } else {
+        fallbackMark
+      }
     }
     .frame(width: size, height: size)
     .accessibilityHidden(true)
+  }
+
+  private var appIcon: NSImage? {
+    guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png") else {
+      return nil
+    }
+    return NSImage(contentsOf: url)
+  }
+
+  private var fallbackMark: some View {
+    ZStack {
+      Circle().fill(AppTheme.mochiPink)
+      Circle().fill(AppTheme.mochiCream)
+        .frame(width: size * 0.62, height: size * 0.62)
+        .offset(y: size * 0.08)
+      Circle().fill(AppTheme.mochiMatcha)
+        .frame(width: size * 0.16, height: size * 0.16)
+        .offset(x: size * 0.18, y: -size * 0.19)
+    }
   }
 }
 

@@ -7,8 +7,8 @@ struct MainWindowSettingsView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         PageHeader(
-          eyebrow: "Controller", title: "Settings",
-          subtitle: "Tune the local stack and check how it is reachable.", symbol: "gearshape.fill")
+          eyebrow: "Mochi", title: "Settings",
+          subtitle: "Tune your cozy local stack and check how it is reachable.", symbol: "gearshape.fill")
         HardwareProfileCard(manager: manager)
         NetworkDiagnosticsView(manager: manager)
         VStack(alignment: .leading, spacing: 12) {

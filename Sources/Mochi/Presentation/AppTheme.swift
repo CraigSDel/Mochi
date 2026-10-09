@@ -14,6 +14,10 @@ enum AppTheme {
     light: NSColor(red: 0.72, green: 0.82, blue: 0.62, alpha: 1),
     dark: NSColor(red: 0.40, green: 0.52, blue: 0.34, alpha: 1)
   )
+  static let mochiLavender = adaptiveColor(
+    light: NSColor(red: 0.84, green: 0.75, blue: 0.98, alpha: 1),
+    dark: NSColor(red: 0.33, green: 0.25, blue: 0.48, alpha: 1)
+  )
   static let accent = adaptiveColor(
     light: NSColor(red: 0, green: 0.443, blue: 0.89, alpha: 1),
     dark: NSColor(red: 0.039, green: 0.518, blue: 1, alpha: 1)
@@ -34,6 +38,14 @@ enum AppTheme {
   static let tertiaryText = Color(nsColor: .tertiaryLabelColor)
   static let separator = Color(nsColor: .separatorColor)
   static let cornerRadius: CGFloat = 18
+
+  static var mochiBackdrop: LinearGradient {
+    LinearGradient(
+      colors: [pageBackground, mochiPink.opacity(0.16), mochiLavender.opacity(0.12), pageBackground],
+      startPoint: .topLeading,
+      endPoint: .bottomTrailing
+    )
+  }
 
   private static func adaptiveColor(light: NSColor, dark: NSColor) -> Color {
     Color(

@@ -19,6 +19,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$BUILD_DIR/release/Mochi" "$CONTENTS/MacOS/Mochi"
 cp "$ROOT/start_llama_network.sh" "$CONTENTS/Resources/"
+cp "$ROOT/AppResources/AppIcon.png" "$CONTENTS/Resources/AppIcon.png"
 cp "$ROOT/AppResources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 cp "$ROOT/AppResources/Info.plist" "$CONTENTS/Info.plist"
 chmod +x "$CONTENTS/MacOS/Mochi" "$CONTENTS/Resources/"*.sh

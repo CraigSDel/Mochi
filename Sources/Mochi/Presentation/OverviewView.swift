@@ -20,7 +20,7 @@ struct OverviewView: View {
       VStack(alignment: .leading, spacing: 22) {
         HStack(alignment: .center) {
           PageHeader(
-            eyebrow: "Control center", title: "Your local AI stack",
+            eyebrow: "Mochi workspace", title: "Your cozy AI corner",
             subtitle: runningCount == 0
               ? "Everything is quiet and ready when you are."
               : "\(runningCount) of \(manager.services.count) services are healthy.",
@@ -59,6 +59,6 @@ struct OverviewView: View {
       }
       .padding(.horizontal, 36).padding(.vertical, 32)
     }
-    .background(AppTheme.pageBackground)
+    .background(AppTheme.mochiBackdrop)
   }
 }

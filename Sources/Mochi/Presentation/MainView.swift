@@ -28,7 +28,7 @@ struct MainView: View {
     } detail: {
       detail
     }
-    .background(AppTheme.pageBackground)
+    .background(AppTheme.mochiBackdrop)
     .toolbar {
       Button {
         Task {
@@ -58,7 +58,7 @@ struct MainView: View {
           BrandMark(size: 38)
           VStack(alignment: .leading, spacing: 1) {
             Text("Mochi").font(.headline)
-            Text("Local AI workspace").font(.caption).foregroundStyle(.secondary)
+            Text("Sweet local workspace").font(.caption).foregroundStyle(.secondary)
           }
         }
         .padding(.vertical, 8)
