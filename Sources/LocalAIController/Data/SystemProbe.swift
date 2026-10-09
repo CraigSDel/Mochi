@@ -2,21 +2,40 @@ import Foundation
 import Darwin
 import SystemConfiguration
 
-protocol SystemProbing: AnyObject, Sendable {
-    var supportDirectory: URL { get }
-    var physicalMemory: UInt64 { get }
+protocol SystemCommandProbing: AnyObject, Sendable {
     func commandPath(_ command: String) async -> String?
-    func isPortListening(_ port: Int) async -> Bool
+}
+
+protocol NetworkProbing: AnyObject, Sendable {
     func tailscaleIP() async -> String?
     func wifiIP() async -> String?
     func localNetworkIP() async -> String?
-    func availableDiskBytes() async -> Int64
-    func scriptURL(named name: String) async -> URL?
+}
+
+protocol ProcessProbing: AnyObject, Sendable {
     func isProcessRunning(_ pid: Int32) async -> Bool
     func processCommand(_ pid: Int32) async -> String
+}
+
+protocol RuntimeHealthProbing: AnyObject, Sendable {
+    func isPortListening(_ port: Int) async -> Bool
     func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool
-    func tailscaleDiagnostic() async -> TailscaleDiagnostic
+}
+
+protocol RuntimeResourceProbing: AnyObject, Sendable {
+    var supportDirectory: URL { get }
+    var physicalMemory: UInt64 { get }
+    func availableDiskBytes() async -> Int64
+    func scriptURL(named name: String) async -> URL?
+}
+
+protocol ModelInventoryProbing: AnyObject, Sendable {
     func discoverModels() async -> [DiscoveredModel]
+}
+
+protocol SystemProbing: SystemCommandProbing, NetworkProbing, ProcessProbing,
+    RuntimeHealthProbing, RuntimeResourceProbing, ModelInventoryProbing {
+    func tailscaleDiagnostic() async -> TailscaleDiagnostic
 }
 
 final class LiveSystemProbe: SystemProbing, @unchecked Sendable {

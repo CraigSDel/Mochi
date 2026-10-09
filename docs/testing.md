@@ -21,6 +21,14 @@ ports, the user's defaults domain, and public registries.
   condition over fixed delays; where a real child process is essential, ensure
   the test stops it even after assertion failures.
 - Add regression coverage for bug fixes and legacy persisted formats.
+- Test each effectful collaborator independently through its protocol. Cover
+  successful results, operational failures, cancellation for async workflows,
+  persistence failures, missing dependencies, and safety/ownership rejection.
+- Keep observable facade tests focused on published state and user-visible
+  diagnostics; do not assert private collaborator call sequences.
+- Architecture tests should reject direct persistence, process, filesystem,
+  or networking imports in presentation/domain code and should report the
+  source file and violated boundary clearly.
 - Do not weaken assertions or production safety checks to make a flaky test
   pass.
 

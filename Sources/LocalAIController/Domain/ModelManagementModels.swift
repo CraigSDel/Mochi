@@ -57,10 +57,18 @@ enum ModelManagementError: LocalizedError, Equatable {
     }
 }
 
-protocol ModelManaging: AnyObject, Sendable {
+protocol ModelInventoryProviding: AnyObject, Sendable {
     func discover() async -> [DiscoveredModel]
+}
+
+protocol ModelMetadataStoring: AnyObject, Sendable {
     func loadMetadata() async -> [String: ModelMetadata]
     func saveMetadata(_ metadata: [String: ModelMetadata]) async
+}
+
+protocol ModelTransferring: AnyObject, Sendable {
     func download(_ recommendation: ModelRecommendation, progress: @escaping @Sendable (ModelDownloadProgress) -> Void) async throws
     func delete(_ model: DiscoveredModel) async throws
 }
+
+protocol ModelManaging: ModelInventoryProviding, ModelMetadataStoring, ModelTransferring {}

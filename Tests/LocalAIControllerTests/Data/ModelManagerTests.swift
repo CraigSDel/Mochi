@@ -88,6 +88,36 @@ final class ModelManagerTests: XCTestCase {
             XCTFail("Unexpected error: \(error)")
         }
     }
+
+    func test_metadataStore_roundTripsAssignments() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = FileModelMetadataStore(metadataURL: root.appendingPathComponent("metadata.json"))
+        let values = ["model": ModelMetadata(alias: "Model", role: .chat, assignedServices: [.llamaChat], isPinned: true)]
+
+        await store.saveMetadata(values)
+
+        let loaded = await store.loadMetadata()
+        XCTAssertEqual(loaded, values)
+    }
+
+    func test_deleteRejectsMissingManagedModelPath() async {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let manager = LiveModelManager(fileManager: .default, huggingFaceHubURL: root)
+        let model = DiscoveredModel(
+            runtime: .llamaCpp, name: "missing", repository: "org/model", filename: "missing.gguf",
+            sizeBytes: nil, roleHint: .chat, supportsVision: false
+        )
+
+        do {
+            try await manager.delete(model)
+            XCTFail("Expected unsafe path rejection")
+        } catch let error as ModelManagementError {
+            XCTAssertEqual(error, .unsafePath)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
 }
 
 private final class ProgressRecorder: @unchecked Sendable {

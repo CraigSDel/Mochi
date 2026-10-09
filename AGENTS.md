@@ -46,6 +46,27 @@ check_code_line_lengths.sh      300-line authored-file quality gate
 Add a focused source file when a type has a distinct responsibility. Do not
 turn this small package into a speculative multi-module architecture.
 
+## Complexity and collaborator rules
+
+- Treat responsibility mixing as the primary complexity signal, not only line
+  count. Split a type when it combines observable state with two or more of
+  persistence, OS/process access, networking, model discovery, orchestration,
+  or notification delivery.
+- Keep observable `@MainActor` types focused on state and intent handling.
+  Inject use cases and small protocols for effectful work; do not make views
+  or view models own filesystem, process, URLSession, or UserDefaults details.
+- Put blocking filesystem scans, process waits, command execution, and runtime
+  discovery behind async or actor-backed collaborators. A protocol is required
+  when a boundary needs an independent fake or has multiple implementations.
+- Preserve one authoritative path for state transitions, persistence formats,
+  launcher arguments, environment variables, and process ownership checks.
+- For every new collaborator, add isolated tests for success, failure,
+  cancellation where relevant, persistence compatibility, and missing runtime
+  dependencies. Keep integration tests for shell/runtime contracts.
+- Files at or below 300 lines are still candidates for splitting when their
+  responsibilities are unrelated. Never compress code or hide dependencies to
+  satisfy the line-count gate.
+
 ## Gotchas
 
 - UI and observable application state run on `@MainActor`. Keep blocking

@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import AppKit
 
 struct MemorySample: Identifiable, Equatable, Sendable {
     let timestamp: Date
@@ -45,7 +44,7 @@ final class MemoryMonitor: ObservableObject {
 
     private let probe: any MemoryProbing
     private let maximumSampleCount: Int
-    private let wakeNotificationCenter: NotificationCenter
+    private let wakeNotificationSource: any WakeNotificationSource
     private var timer: Timer?
     private var wakeNotificationToken: NSObjectProtocol?
     private var serviceRootProvider: (() -> [ServiceID: ManagedProcessRoot])?
@@ -53,11 +52,14 @@ final class MemoryMonitor: ObservableObject {
     init(
         probe: any MemoryProbing = LiveMemoryProbe(),
         maximumSampleCount: Int = PerformanceBudgets.maximumMemorySamples,
-        wakeNotificationCenter: NotificationCenter = NSWorkspace.shared.notificationCenter
+        wakeNotificationSource: (any WakeNotificationSource)? = nil,
+        wakeNotificationCenter: NotificationCenter? = nil
     ) {
         self.probe = probe
         self.maximumSampleCount = max(1, maximumSampleCount)
-        self.wakeNotificationCenter = wakeNotificationCenter
+        self.wakeNotificationSource = wakeNotificationSource
+            ?? wakeNotificationCenter.map { NotificationCenterWakeSource(center: $0) }
+            ?? LiveWakeNotificationSource()
     }
 
     func start(serviceRoots: @escaping () -> [ServiceID: ManagedProcessRoot]) async {
@@ -74,7 +76,7 @@ final class MemoryMonitor: ObservableObject {
         timer?.invalidate()
         timer = nil
         if let wakeNotificationToken {
-            wakeNotificationCenter.removeObserver(wakeNotificationToken)
+            wakeNotificationSource.center.removeObserver(wakeNotificationToken)
             self.wakeNotificationToken = nil
         }
         serviceRootProvider = nil
@@ -86,8 +88,8 @@ final class MemoryMonitor: ObservableObject {
 
     private func installWakeObserver() {
         guard wakeNotificationToken == nil else { return }
-        wakeNotificationToken = wakeNotificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification,
+        wakeNotificationToken = wakeNotificationSource.center.addObserver(
+            forName: wakeNotificationSource.name,
             object: nil,
             queue: .main
         ) { [weak self] _ in

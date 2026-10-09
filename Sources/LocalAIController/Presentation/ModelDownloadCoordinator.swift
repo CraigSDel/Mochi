@@ -15,16 +15,24 @@ final class ModelDownloadCoordinator: ObservableObject {
     @Published private(set) var failures: [Failure] = []
     @Published private(set) var cancelled: [ModelRecommendation] = []
 
-    private weak var manager: ServiceManager?
-    private let defaults: UserDefaults
-    private let queueKey = "modelDownloadQueue.v1"
+    private weak var manager: (any ModelDownloadExecuting)?
+    private let queueStore: any ModelDownloadQueueStoring
     private var task: Task<Void, Never>?
 
-    init(manager: ServiceManager, defaults: UserDefaults = .standard) {
+    init(
+        manager: any ModelDownloadExecuting,
+        queueStore: any ModelDownloadQueueStoring
+    ) {
         self.manager = manager
-        self.defaults = defaults
-        queued = (defaults.data(forKey: queueKey)
-            .flatMap { try? JSONDecoder().decode([ModelRecommendation].self, from: $0) }) ?? []
+        self.queueStore = queueStore
+        queued = []
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let stored = await self.queueStore.load()
+            guard self.queued.isEmpty else { return }
+            self.queued = stored
+            self.processNext()
+        }
         processNext()
     }
 
@@ -106,8 +114,8 @@ final class ModelDownloadCoordinator: ObservableObject {
     }
 
     private func persistQueue() {
-        guard let data = try? JSONEncoder().encode(queued) else { return }
-        defaults.set(data, forKey: queueKey)
+        let snapshot = queued
+        Task { await queueStore.save(snapshot) }
     }
 
     private func identity(_ recommendation: ModelRecommendation) -> String {

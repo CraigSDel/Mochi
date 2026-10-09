@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 enum ManagedProcessOwnership {
-    static func root(_ record: ManagedProcessRecord, probe: any SystemProbing) async -> ManagedProcessRoot {
+    static func root(_ record: ManagedProcessRecord, probe: any ProcessProbing) async -> ManagedProcessRoot {
         guard await probe.isProcessRunning(record.pid) else {
             return .noOwnedPID(reason: "Recorded PID \(record.pid) is not running")
         }

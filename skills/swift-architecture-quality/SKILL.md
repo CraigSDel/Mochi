@@ -21,6 +21,11 @@ When the project has layered directories, add XCTest checks that:
   mapper;
 - detect Views reaching into repositories or data sources directly;
 - detect ViewModels retaining SwiftUI Views or UIKit controllers.
+- detect observable application/presentation types directly using `Process`,
+  `FileManager`, `Data(contentsOf:)`, `URLSession`, or `UserDefaults` for
+  effectful work instead of an injected collaborator;
+- detect source files that combine multiple unrelated effect boundaries and
+  report them for responsibility-based review, even below 300 lines.
 
 Prefer SwiftSyntax for source inspection when it is available in the package.
 Keep architecture tests deterministic, explain the violated boundary in the
@@ -37,6 +42,9 @@ the limitation or use a small, clearly bounded fallback only when appropriate.
   behavior.
 - Keep mocks reusable and protocol-shaped; do not test through real network,
   database, process, or UI dependencies in unit tests.
+- For persistence, process, and runtime collaborators, include failure,
+  cancellation, missing dependency, and compatibility cases in addition to
+  happy-path tests.
 - Prefer async XCTest APIs and name tests as
   `test_[subject]_[scenario]_[expectedResult]`.
 

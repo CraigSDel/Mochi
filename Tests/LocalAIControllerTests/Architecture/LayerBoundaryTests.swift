@@ -26,7 +26,7 @@ final class LayerBoundaryTests: XCTestCase {
         let files = try swiftFiles(in: "Sources/LocalAIController/Domain")
         for file in files {
             let contents = try String(contentsOf: file, encoding: .utf8)
-            for forbidden in ["SwiftUI", "UIKit", "ObservableObject", "URLSession"] {
+            for forbidden in ["SwiftUI", "UIKit", "ObservableObject", "URLSession", "FileManager", "Process("] {
                 XCTAssertFalse(contents.contains(forbidden),
                     "Domain file \(file.path) references presentation/infrastructure symbol \(forbidden)")
             }
@@ -66,6 +66,25 @@ final class LayerBoundaryTests: XCTestCase {
                 "Presentation file \(file.path) reaches directly into networking")
             XCTAssertFalse(contents.contains("Process()"),
                 "Presentation file \(file.path) creates processes directly")
+        }
+    }
+
+    func test_presentationStateOwners_doNotPerformInfrastructureWorkDirectly() throws {
+        let files = try swiftFiles(in: "Sources/LocalAIController/Presentation")
+        let forbiddenTokens = [
+            "Data(contentsOf:", "FileManager.default", "URLSession.",
+            "Process()", "UNUserNotificationCenter", "UserDefaults", "NSWorkspace"
+        ]
+
+        for file in files {
+            let contents = try String(contentsOf: file, encoding: .utf8)
+            guard contents.contains("ObservableObject") || contents.contains("@StateObject") else { continue }
+            for token in forbiddenTokens {
+                XCTAssertFalse(
+                    contents.contains(token),
+                    "Presentation state owner \(file.path) directly uses infrastructure token \(token)"
+                )
+            }
         }
     }
 

@@ -7,7 +7,10 @@ final class ModelDownloadCoordinatorTests: XCTestCase {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let fake = BlockingModelManager()
         let manager = ServiceManager(modelManager: fake, defaults: defaults, startTimer: false)
-        let coordinator = ModelDownloadCoordinator(manager: manager, defaults: defaults)
+        let coordinator = ModelDownloadCoordinator(
+            manager: manager,
+            queueStore: UserDefaultsModelDownloadQueueStore(defaults: defaults)
+        )
         let first = recommendation(id: "first", filename: "first.gguf")
         let second = recommendation(id: "second", filename: "second.gguf")
 

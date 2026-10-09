@@ -176,3 +176,5 @@ extension ServiceManager {
             : nil
     }
 }
+
+extension ServiceManager: ModelDownloadExecuting {}

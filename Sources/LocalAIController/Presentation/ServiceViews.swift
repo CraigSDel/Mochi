@@ -5,6 +5,7 @@ struct ServiceDetail: View {
     let service: ServiceSnapshot
     @ObservedObject var manager: ServiceManager
     @ObservedObject var recommendations: RecommendationStore
+    let fileReveal: any FileRevealClient
     let openModels: () -> Void
     @State private var logsExpanded = false
 
@@ -52,7 +53,7 @@ struct ServiceDetail: View {
                         Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(service.logText, forType: .string) }
                             .buttonStyle(AppleSecondaryButtonStyle())
                             .disabled(service.logText.isEmpty)
-                        Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([manager.logURL(service.id)]) }
+                        Button("Reveal in Finder") { fileReveal.reveal(manager.logURL(service.id)) }
                             .buttonStyle(AppleSecondaryButtonStyle())
                         Spacer()
                         Button("Clear", role: .destructive) { manager.clearLog(service.id) }

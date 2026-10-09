@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import UserNotifications
 
 protocol RecommendationProvider: Sendable {
     var sourceName: String { get }
@@ -24,27 +23,26 @@ final class RecommendationStore: ObservableObject {
 
     private let providers: [any RecommendationProvider]
     private let searchProvider: any ModelSearchProvider
-    private let defaults: UserDefaults
-    private let cacheURL: URL
+    private let cache: any RecommendationCaching
+    private let notifier: any RecommendationNotifying
     private var catalogRecommendations: [ModelRecommendation] = []
     private var timer: Timer?
 
     init(
         providers: [any RecommendationProvider] = [CuratedLlamaCppProvider(), HuggingFaceProvider(), OllamaLibraryProvider()],
         searchProvider: (any ModelSearchProvider)? = nil,
-        defaults: UserDefaults = .standard,
-        cacheURL: URL? = nil,
+        cache: any RecommendationCaching = FileRecommendationCache.standard(),
+        notifier: any RecommendationNotifying = UserNotificationRecommendationNotifier(),
         startTimer: Bool = true
     ) {
         self.providers = providers
         self.searchProvider = searchProvider ?? (providers.compactMap { $0 as? any ModelSearchProvider }.first ?? HuggingFaceProvider())
-        self.defaults = defaults
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Local AI Controller")
-        self.cacheURL = cacheURL ?? base.appendingPathComponent("recommendations.json")
-        loadCache()
+        self.cache = cache
+        self.notifier = notifier
+        catalogRecommendations = self.cache.load()
         mergeCuratedRecommendationsIfEnabled()
         publishRecommendations()
-        let stored = defaults.object(forKey: "recommendationsLastChecked") as? Date
+        let stored = self.cache.lastChecked()
         lastChecked = stored
         if stored == nil || Date().timeIntervalSince(stored!) >= 86_400 { Task { await refresh() } }
         if startTimer { timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
@@ -88,10 +86,12 @@ final class RecommendationStore: ObservableObject {
         }
         publishRecommendations()
         let newCompatible = combined.filter { $0.compatibility == .compatible && !previous.contains($0.id) }
-        if !newCompatible.isEmpty && !previous.isEmpty { await notify(newCompatible) }
-        lastChecked = Date(); defaults.set(lastChecked, forKey: "recommendationsLastChecked")
+        if !newCompatible.isEmpty && !previous.isEmpty { await notifier.notifyNewCompatibleModels(newCompatible) }
+        let checked = Date()
+        lastChecked = checked
+        cache.setLastChecked(checked)
         status = failures.isEmpty ? "Checked both registries" : "Unavailable: \(failures.joined(separator: ", "))"
-        saveCache()
+        cache.save(catalogRecommendations)
     }
 
     func search(query: String) async {
@@ -119,35 +119,12 @@ final class RecommendationStore: ObservableObject {
         searchStatus = ""
     }
 
-    private func notify(_ models: [ModelRecommendation]) async {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-        var allowed = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
-        if settings.authorizationStatus == .notDetermined {
-            allowed = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        }
-        guard allowed else { return }
-        let content = UNMutableNotificationContent()
-        content.title = "New compatible local models"
-        content.body = models.prefix(3).map(\.name).joined(separator: ", ")
-        try? await center.add(UNNotificationRequest(identifier: "models-\(Int(Date().timeIntervalSince1970))", content: content, trigger: nil))
-    }
-
-    private func loadCache() {
-        guard let data = try? Data(contentsOf: cacheURL), let decoded = try? JSONDecoder().decode([ModelRecommendation].self, from: data) else { return }
-        catalogRecommendations = decoded
-    }
     private func mergeCuratedRecommendationsIfEnabled() {
         guard providers.contains(where: { $0.sourceName == CuratedLlamaCppProvider().sourceName }) else { return }
         let curatedIDs = Set(CuratedLlamaCppProvider.recommendations.map(\.id))
         catalogRecommendations.removeAll { curatedIDs.contains($0.id) }
         catalogRecommendations.insert(contentsOf: CuratedLlamaCppProvider.recommendations, at: 0)
     }
-    private func saveCache() {
-        try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(catalogRecommendations) { try? data.write(to: cacheURL, options: .atomic) }
-    }
-
     private func publishRecommendations() {
         recommendations = Array(catalogRecommendations.prefix(PerformanceBudgets.maximumRecommendations))
     }

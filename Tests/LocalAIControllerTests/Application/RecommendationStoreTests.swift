@@ -24,7 +24,11 @@ final class RecommendationStoreTests: XCTestCase {
         try JSONEncoder().encode([cached]).write(to: cache)
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         let provider = StubRecommendationProvider(sourceName: "Registry", result: .failure(URLError(.notConnectedToInternet)))
-        let store = RecommendationStore(providers: [provider], defaults: defaults, cacheURL: cache, startTimer: false)
+        let store = RecommendationStore(
+            providers: [provider],
+            cache: FileRecommendationCache(defaults: defaults, cacheURL: cache),
+            startTimer: false
+        )
         await store.refresh()
         XCTAssertEqual(store.recommendations.map(\.id), ["cached"])
         XCTAssertNil(store.lastChecked)
@@ -45,7 +49,11 @@ final class RecommendationStoreTests: XCTestCase {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         defaults.set(Date(), forKey: "recommendationsLastChecked")
 
-        let store = RecommendationStore(providers: [CuratedLlamaCppProvider()], defaults: defaults, cacheURL: cache, startTimer: false)
+        let store = RecommendationStore(
+            providers: [CuratedLlamaCppProvider()],
+            cache: FileRecommendationCache(defaults: defaults, cacheURL: cache),
+            startTimer: false
+        )
 
         XCTAssertEqual(store.recommendations.filter { $0.source == "Verified llama.cpp" }.count, 3)
         XCTAssertTrue(store.recommendations.contains { $0.id == "cached" })
@@ -56,7 +64,12 @@ final class RecommendationStoreTests: XCTestCase {
         defaults.set(Date(), forKey: "recommendationsLastChecked")
         let model = recommendation()
         let searchProvider = StubSearchProvider(result: .success([model]))
-        let store = RecommendationStore(providers: [], searchProvider: searchProvider, defaults: defaults, startTimer: false)
+        let store = RecommendationStore(
+            providers: [],
+            searchProvider: searchProvider,
+            cache: FileRecommendationCache(defaults: defaults, cacheURL: FileManager.default.temporaryDirectory.appendingPathComponent("empty-recommendations.json")),
+            startTimer: false
+        )
 
         await store.search(query: "qwen")
 

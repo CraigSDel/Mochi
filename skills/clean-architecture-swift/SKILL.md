@@ -19,6 +19,11 @@ layers or modules without a distinct responsibility.
   intent to ViewModels; ViewModels coordinate use cases and expose UI state.
 - Apply dependency inversion: higher-level code depends on protocols, with
   concrete dependencies supplied through initializers or a feature factory.
+- Treat an observable store/view model as a state facade, not an infrastructure
+  container. Extract persistence, process, filesystem, networking, notification,
+  and discovery behavior into focused async collaborators.
+- Split by responsibility when a type combines state plus multiple effects,
+  regardless of whether it is below the repository's line-count limit.
 
 ## Swift standards
 
@@ -29,6 +34,8 @@ layers or modules without a distinct responsibility.
   not expose generic transport or persistence errors as the UI contract.
 - Define protocols and fakes/mocks for use cases, repositories, and clients so
   ViewModels and business rules can be tested in isolation.
+- Keep blocking filesystem/process work behind async or actor-backed protocols;
+  do not call synchronous scans or waits from `@MainActor` state paths.
 
 ## Feature layout
 
