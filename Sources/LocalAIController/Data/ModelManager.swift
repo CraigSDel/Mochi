@@ -7,7 +7,7 @@ final class ProbeModelManager: ModelManaging, @unchecked Sendable {
     func discover() async -> [DiscoveredModel] { await probe.discoverModels() }
     func loadMetadata() async -> [String: ModelMetadata] { [:] }
     func saveMetadata(_ metadata: [String: ModelMetadata]) async {}
-    func download(_ recommendation: ModelRecommendation) async throws { throw ModelManagementError.unsupportedSource }
+    func download(_ recommendation: ModelRecommendation, progress: @escaping @Sendable (ModelDownloadProgress) -> Void) async throws { throw ModelManagementError.unsupportedSource }
     func delete(_ model: DiscoveredModel) async throws { throw ModelManagementError.unsupportedSource }
 }
 
@@ -61,7 +61,7 @@ final class LiveModelManager: ModelManaging, @unchecked Sendable {
         }.value
     }
 
-    func download(_ recommendation: ModelRecommendation) async throws {
+    func download(_ recommendation: ModelRecommendation, progress: @escaping @Sendable (ModelDownloadProgress) -> Void) async throws {
         if recommendation.runtime.caseInsensitiveCompare("Ollama") == .orderedSame {
             try await run("ollama", arguments: ["pull", recommendation.modelName ?? recommendation.name])
             return
@@ -72,9 +72,9 @@ final class LiveModelManager: ModelManaging, @unchecked Sendable {
         let destinationRoot = huggingFaceHubURL.appendingPathComponent("models--\(repository.replacingOccurrences(of: "/", with: "--"))")
         let snapshot = destinationRoot.appendingPathComponent("snapshots/manual")
         let destination = snapshot.appendingPathComponent(filename)
-        let result = try await downloadClient.download(from: executable)
+        let result = try await downloadClient.download(from: executable, progress: progress)
         guard result.statusCode == 200 else {
-            throw ModelManagementError.downloadFailed("The model download returned an unsuccessful response.")
+            throw ModelManagementError.downloadFailed("The model download returned HTTP \(result.statusCode). Check the repository and filename, then try again.")
         }
         try await Task.detached(priority: .utility) { [fileManager, temporary = result.temporaryURL] in
             try fileManager.createDirectory(at: snapshot, withIntermediateDirectories: true)
@@ -112,18 +112,38 @@ final class LiveModelManager: ModelManaging, @unchecked Sendable {
         guard let executable = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].lazy.map({ URL(fileURLWithPath: $0).appendingPathComponent(command).path }).first(where: { fileManager.isExecutableFile(atPath: $0) }) else {
             throw ModelManagementError.runtimeUnavailable(command)
         }
-        let result = await Task.detached(priority: .utility) {
+        let cancellation = ProcessCancellationBox()
+        let result = await withTaskCancellationHandler {
+            await Task.detached(priority: .utility) {
             let process = Process(); let pipe = Pipe()
+            cancellation.set(process)
             process.executableURL = URL(fileURLWithPath: executable); process.arguments = arguments
             process.standardOutput = pipe; process.standardError = pipe
             do { try process.run() } catch { return (1, error.localizedDescription) }
             let data = pipe.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
             return (Int(process.terminationStatus), String(data: data, encoding: .utf8) ?? "")
-        }.value
+            }.value
+        } onCancel: {
+            cancellation.terminate()
+        }
+        try Task.checkCancellation()
         guard result.0 == 0 else { throw ModelManagementError.commandFailed(result.1.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
     private func validComponent(_ value: String) -> Bool {
         !value.isEmpty && !value.contains("..") && !value.contains("\\") && !value.hasPrefix("/")
+    }
+}
+
+private final class ProcessCancellationBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var process: Process?
+
+    func set(_ process: Process) {
+        lock.lock(); self.process = process; lock.unlock()
+    }
+
+    func terminate() {
+        lock.lock(); process?.terminate(); lock.unlock()
     }
 }

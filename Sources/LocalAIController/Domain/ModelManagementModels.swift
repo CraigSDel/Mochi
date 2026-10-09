@@ -4,6 +4,36 @@ struct ModelMetadata: Codable, Equatable, Sendable {
     var alias: String
     var role: RecommendationRole
     var assignedServices: Set<ServiceID>
+    var isPinned: Bool
+
+    init(alias: String, role: RecommendationRole, assignedServices: Set<ServiceID>, isPinned: Bool = false) {
+        self.alias = alias
+        self.role = role
+        self.assignedServices = assignedServices
+        self.isPinned = isPinned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case alias, role, assignedServices, isPinned
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        alias = try container.decode(String.self, forKey: .alias)
+        role = try container.decode(RecommendationRole.self, forKey: .role)
+        assignedServices = try container.decode(Set<ServiceID>.self, forKey: .assignedServices)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    }
+}
+
+struct ModelDownloadProgress: Equatable, Sendable {
+    let completedBytes: Int64
+    let expectedBytes: Int64?
+
+    var fractionCompleted: Double? {
+        guard let expectedBytes, expectedBytes > 0 else { return nil }
+        return min(max(Double(completedBytes) / Double(expectedBytes), 0), 1)
+    }
 }
 
 enum ModelManagementError: LocalizedError, Equatable {
@@ -31,6 +61,6 @@ protocol ModelManaging: AnyObject, Sendable {
     func discover() async -> [DiscoveredModel]
     func loadMetadata() async -> [String: ModelMetadata]
     func saveMetadata(_ metadata: [String: ModelMetadata]) async
-    func download(_ recommendation: ModelRecommendation) async throws
+    func download(_ recommendation: ModelRecommendation, progress: @escaping @Sendable (ModelDownloadProgress) -> Void) async throws
     func delete(_ model: DiscoveredModel) async throws
 }

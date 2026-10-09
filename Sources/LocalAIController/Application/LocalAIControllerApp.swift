@@ -37,19 +37,11 @@ struct LocalAIControllerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var manager: ServiceManager?
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let manager, manager.hasManagedRunningServices else { return .terminateNow }
-        let alert = NSAlert()
-        alert.messageText = "Models are still running"
-        alert.informativeText = "Keep them running after the controller quits, or stop services started by this app?"
-        alert.addButton(withTitle: "Keep Running")
-        alert.addButton(withTitle: "Stop Services")
-        alert.addButton(withTitle: "Cancel")
-        switch alert.runModal() {
-        case .alertFirstButtonReturn: return .terminateNow
-        case .alertSecondButtonReturn:
-            Task { @MainActor in await manager.stopAll(); sender.reply(toApplicationShouldTerminate: true) }
-            return .terminateLater
-        default: return .terminateCancel
+        guard let manager else { return .terminateNow }
+        Task { @MainActor in
+            await manager.stopAll()
+            sender.reply(toApplicationShouldTerminate: true)
         }
+        return .terminateLater
     }
 }

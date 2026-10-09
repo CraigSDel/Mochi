@@ -69,6 +69,17 @@ enum ModelOptionBuilder {
         }
     }
 
+    static func recommendation(for option: ModelOption, from recommendations: [ModelRecommendation]) -> ModelRecommendation? {
+        recommendations.first { recommendation in
+            switch option.runtime {
+            case .llamaCpp:
+                recommendation.repository == option.repository && recommendation.filename == option.filename
+            case .ollama:
+                recommendation.modelName.map(OllamaModelReference.key) == OllamaModelReference.key(option.name)
+            }
+        }
+    }
+
     private static func rank(_ option: ModelOption, role: RecommendationRole) -> Int {
         let availability = option.availability == .installed ? 0 : 2
         return availability + (option.roleHint == role ? 0 : 1)

@@ -40,9 +40,3 @@ final class UserDefaultsModelSettingsStore: ModelSettingsStoring, @unchecked Sen
         var key: ModelAssignmentKey? { .init(runtime: runtime, modelID: modelID, serviceID: serviceID, role: role) }
     }
 }
-
-struct InMemoryModelSettingsStore: ModelSettingsStoring {
-    var values: [ModelAssignmentKey: ModelSettingsProfile] = [:]
-    func load() async -> [ModelAssignmentKey: ModelSettingsProfile] { values }
-    func save(_ settings: [ModelAssignmentKey: ModelSettingsProfile]) async {}
-}

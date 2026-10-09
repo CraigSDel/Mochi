@@ -206,15 +206,6 @@ struct ServiceLaunchConfiguration: Codable, Equatable, Sendable {
         }
     }
 
-    func hasCustomModels(comparedTo defaults: Self) -> Bool {
-        if let llama, let baseline = defaults.llama {
-            return llama.repository != baseline.repository || llama.filename != baseline.filename || llama.alias != baseline.alias
-        }
-        if let ollama, let baseline = defaults.ollama {
-            return ollama.chatModel != baseline.chatModel || ollama.autocompleteModel != baseline.autocompleteModel || ollama.embeddingModel != baseline.embeddingModel
-        }
-        return false
-    }
 }
 
 struct ConfigurationIssue: Identifiable, Equatable, Sendable {
@@ -259,13 +250,10 @@ struct ServiceDefinition: Identifiable, Sendable {
     let name: String
     let detail: String
     let runtime: String
-    let defaultPort: Int?
     let modelChoice: String?
     let executable: String?
-    let modelFormat: String
     let estimatedBytes: Int64?
     let supported: Bool
-    let unavailableReason: String?
 }
 
 struct ServiceSnapshot: Identifiable, Sendable {
@@ -276,16 +264,6 @@ struct ServiceSnapshot: Identifiable, Sendable {
     var endpoint: String?
     var logText = ""
     var id: ServiceID { definition.id }
-}
-
-struct ManagedProcessRecord: Codable, Sendable {
-    let serviceID: ServiceID
-    let pid: Int32
-    let port: Int
-    let expectedCommand: String
-    let startedAt: Date
-    let logPath: String
-    let bindMode: BindMode?
 }
 
 struct ServiceFailure: Identifiable, Sendable {

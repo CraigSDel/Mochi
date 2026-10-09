@@ -60,12 +60,6 @@ final class MemoryMonitor: ObservableObject {
         self.wakeNotificationCenter = wakeNotificationCenter
     }
 
-    func start(servicePIDs: @escaping () -> [ServiceID: Int32]) async {
-        await start(serviceRoots: {
-            Dictionary(uniqueKeysWithValues: servicePIDs().map { ($0.key, .owned(pid: $0.value)) })
-        })
-    }
-
     func start(serviceRoots: @escaping () -> [ServiceID: ManagedProcessRoot]) async {
         serviceRootProvider = serviceRoots
         await captureOwnedRoots()
@@ -86,18 +80,6 @@ final class MemoryMonitor: ObservableObject {
         serviceRootProvider = nil
     }
 
-    func capture(at timestamp: Date = Date(), servicePIDs: [ServiceID: Int32]? = nil) async {
-        let roots: [ServiceID: ManagedProcessRoot]
-        if let servicePIDs {
-            roots = Dictionary(uniqueKeysWithValues: ServiceID.allCases.map { id in
-                (id, servicePIDs[id].map(ManagedProcessRoot.owned) ?? .noOwnedPID(reason: "No validated owned PID"))
-            })
-        } else {
-            roots = serviceRootProvider?() ?? [:]
-        }
-        await capture(at: timestamp, serviceRoots: roots)
-    }
-
     private func captureOwnedRoots(at timestamp: Date = Date()) async {
         await capture(at: timestamp, serviceRoots: serviceRootProvider?() ?? [:])
     }
@@ -113,7 +95,7 @@ final class MemoryMonitor: ObservableObject {
         }
     }
 
-    private func capture(at timestamp: Date, serviceRoots: [ServiceID: ManagedProcessRoot]) async {
+    func capture(at timestamp: Date = Date(), serviceRoots: [ServiceID: ManagedProcessRoot]) async {
         guard let system = await probe.systemMemory() else { return }
         var readings: [ServiceID: ServiceMemoryReading] = [:]
         for id in ServiceID.allCases {

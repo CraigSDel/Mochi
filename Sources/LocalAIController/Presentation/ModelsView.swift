@@ -9,11 +9,21 @@ struct ModelsView: View {
     @State private var editing: DiscoveredModel?
     @State private var deleting: DiscoveredModel?
     @State private var message: String?
+    @ObservedObject var downloads: ModelDownloadCoordinator
 
     private var models: [DiscoveredModel] {
-        manager.installedModels.filter { model in
+        let filtered = manager.installedModels.filter { model in
             (runtime == nil || model.runtime == runtime) &&
             (search.isEmpty || model.name.localizedCaseInsensitiveContains(search) || model.repository?.localizedCaseInsensitiveContains(search) == true)
+        }
+        return filtered.sorted { lhs, rhs in
+            let leftPinned = manager.modelMetadata[lhs.id]?.isPinned == true
+            let rightPinned = manager.modelMetadata[rhs.id]?.isPinned == true
+            if leftPinned != rightPinned { return leftPinned }
+            if lhs.runtime != rhs.runtime { return lhs.runtime.rawValue < rhs.runtime.rawValue }
+            let leftName = manager.modelMetadata[lhs.id]?.alias ?? lhs.name
+            let rightName = manager.modelMetadata[rhs.id]?.alias ?? rhs.name
+            return leftName.localizedCaseInsensitiveCompare(rightName) == .orderedAscending
         }
     }
 
@@ -35,6 +45,7 @@ struct ModelsView: View {
                         .frame(width: 190)
                 }
                 .appCard(padding: 12)
+                DownloadManagerSection(downloads: downloads)
                 if models.isEmpty {
                     FriendlyEmptyState(symbol: "shippingbox", title: "No downloaded models", message: "Add a model from the catalog or install one with its runtime, then refresh this library.")
                 } else {
@@ -57,7 +68,7 @@ struct ModelsView: View {
             .padding(.horizontal, 36).padding(.vertical, 32)
         }
         .background(AppTheme.pageBackground)
-        .sheet(isPresented: $showingAdd) { AddModelSheet(manager: manager, recommendations: recommendations) }
+        .sheet(isPresented: $showingAdd) { AddModelSheet(manager: manager, recommendations: recommendations, downloads: downloads) }
         .sheet(item: $editing) { model in EditModelSheet(model: model, manager: manager) }
         .confirmationDialog("Delete \(deleting?.name ?? "model")?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("Delete Model", role: .destructive) {
@@ -95,6 +106,16 @@ private struct ModelLibraryRow: View {
                     Text(detail).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                Button {
+                    var metadata = manager.modelMetadata
+                    let current = metadata[model.id] ?? ModelMetadata(alias: model.name, role: model.roleHint, assignedServices: [])
+                    metadata[model.id] = ModelMetadata(alias: current.alias, role: current.role, assignedServices: current.assignedServices, isPinned: !current.isPinned)
+                    manager.updateModelMetadata(metadata)
+                } label: {
+                    Image(systemName: metadata?.isPinned == true ? "pin.fill" : "pin")
+                }
+                .buttonStyle(AppleIconButtonStyle())
+                .help(metadata?.isPinned == true ? "Unpin model" : "Pin model")
                 Button("Edit", action: onEdit).buttonStyle(AppleSecondaryButtonStyle())
                 Button("Delete", role: .destructive, action: onDelete).buttonStyle(AppleDestructiveButtonStyle())
             }
@@ -154,7 +175,13 @@ private struct AddModelSheet: View {
     @ObservedObject var recommendations: RecommendationStore
     @State private var query = ""
     @State private var selected: ModelRecommendation?
-    @State private var error: String?
+    @ObservedObject var downloads: ModelDownloadCoordinator
+
+    init(manager: ServiceManager, recommendations: RecommendationStore, downloads: ModelDownloadCoordinator) {
+        self.manager = manager
+        self.recommendations = recommendations
+        self.downloads = downloads
+    }
 
     private var results: [ModelRecommendation] {
         recommendations.recommendations.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }.prefix(30).map { $0 }
@@ -179,19 +206,18 @@ private struct AddModelSheet: View {
                     }.buttonStyle(.plain)
                 }.listStyle(.inset)
             }
-            if let error { Text(error).font(.caption).foregroundStyle(.red) }
-            HStack { Spacer(); Button("Cancel") { dismiss() }.buttonStyle(AppleSecondaryButtonStyle()); Button("Download", action: download).buttonStyle(ApplePrimaryButtonStyle()).disabled(selected == nil) }
+            if let selected {
+                HStack {
+                    Text("Ready to add (selected.name) to the download queue.").font(.caption)
+                    Spacer()
+                    Button("Queue Download") { downloads.enqueue(selected) }
+                        .buttonStyle(ApplePrimaryButtonStyle())
+                }
+            }
+            HStack { Spacer(); Button("Close") { dismiss() }.buttonStyle(AppleSecondaryButtonStyle()) }
         }
         .padding(24).frame(width: 700, height: 560)
         .task { if recommendations.recommendations.isEmpty { await recommendations.refresh() } }
-    }
-
-    private func download() {
-        guard let selected else { return }
-        Task {
-            do { try await manager.downloadModel(selected); dismiss() }
-            catch let failure { error = failure.localizedDescription }
-        }
     }
 }
 
@@ -220,7 +246,7 @@ private struct EditModelSheet: View {
 
     private func save() {
         var metadata = manager.modelMetadata
-        metadata[model.id] = ModelMetadata(alias: alias.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? model.name : alias, role: role, assignedServices: metadata[model.id]?.assignedServices ?? [])
+        metadata[model.id] = ModelMetadata(alias: alias.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? model.name : alias, role: role, assignedServices: metadata[model.id]?.assignedServices ?? [], isPinned: metadata[model.id]?.isPinned ?? false)
         manager.updateModelMetadata(metadata); dismiss()
     }
 }

@@ -20,14 +20,12 @@ final class RecommendationStore: ObservableObject {
     @Published private(set) var searchQuery = ""
     @Published private(set) var searchStatus = ""
     @Published private(set) var isSearching = false
-    @Published private(set) var downloadQueue: [ModelRecommendation] = []
     @Published var lastChecked: Date?
 
     private let providers: [any RecommendationProvider]
     private let searchProvider: any ModelSearchProvider
     private let defaults: UserDefaults
     private let cacheURL: URL
-    private let queueKey = "modelDownloadQueue.v1"
     private var catalogRecommendations: [ModelRecommendation] = []
     private var timer: Timer?
 
@@ -43,7 +41,6 @@ final class RecommendationStore: ObservableObject {
         self.defaults = defaults
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Local AI Controller")
         self.cacheURL = cacheURL ?? base.appendingPathComponent("recommendations.json")
-        loadDownloadQueue()
         loadCache()
         mergeCuratedRecommendationsIfEnabled()
         publishRecommendations()
@@ -122,29 +119,6 @@ final class RecommendationStore: ObservableObject {
         searchStatus = ""
     }
 
-    func isQueued(_ model: ModelRecommendation) -> Bool {
-        guard let key = queueKey(for: model) else { return false }
-        return downloadQueue.contains { queueKey(for: $0) == key }
-    }
-
-    func canQueue(_ model: ModelRecommendation) -> Bool {
-        model.compatibility != .incompatible && queueKey(for: model) != nil
-    }
-
-    func addToDownloadQueue(_ model: ModelRecommendation) {
-        guard canQueue(model), !isQueued(model) else { return }
-        downloadQueue.append(model)
-        persistDownloadQueue()
-        publishRecommendations()
-    }
-
-    func removeFromDownloadQueue(_ model: ModelRecommendation) {
-        guard let key = queueKey(for: model) else { return }
-        downloadQueue.removeAll { queueKey(for: $0) == key }
-        persistDownloadQueue()
-        publishRecommendations()
-    }
-
     private func notify(_ models: [ModelRecommendation]) async {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
@@ -175,34 +149,6 @@ final class RecommendationStore: ObservableObject {
     }
 
     private func publishRecommendations() {
-        var published = catalogRecommendations
-        let existing = Set(published.compactMap(queueKey(for:)))
-        published += downloadQueue.filter { model in
-            guard let key = queueKey(for: model) else { return false }
-            return !existing.contains(key)
-        }
-        recommendations = Array(published.prefix(PerformanceBudgets.maximumRecommendations))
-    }
-
-    private func queueKey(for model: ModelRecommendation) -> String? {
-        guard let repository = model.repository?.trimmingCharacters(in: .whitespacesAndNewlines),
-              let filename = model.filename?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !repository.isEmpty, !filename.isEmpty else { return nil }
-        return "\(repository)|\(filename)"
-    }
-
-    private func loadDownloadQueue() {
-        guard let data = defaults.data(forKey: queueKey),
-              let decoded = try? JSONDecoder().decode([ModelRecommendation].self, from: data) else { return }
-        var seen = Set<String>()
-        downloadQueue = decoded.filter { model in
-            guard canQueue(model), let key = queueKey(for: model) else { return false }
-            return seen.insert(key).inserted
-        }
-    }
-
-    private func persistDownloadQueue() {
-        guard let data = try? JSONEncoder().encode(downloadQueue) else { return }
-        defaults.set(data, forKey: queueKey)
+        recommendations = Array(catalogRecommendations.prefix(PerformanceBudgets.maximumRecommendations))
     }
 }

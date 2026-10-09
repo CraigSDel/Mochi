@@ -166,7 +166,6 @@ final class StartupValidationTests: XCTestCase {
         await manager.refreshStatuses()
 
         XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .owned(pid: 123))
-        XCTAssertEqual(manager.managedProcessIDs[.llamaChat], 123)
         XCTAssertEqual(manager.managedProcessMemoryRoots[.autocomplete], .noOwnedPID(reason: "No launch record"))
 
         probe.processRunningCheck = { _ in false }
@@ -179,6 +178,7 @@ final class StartupValidationTests: XCTestCase {
         await manager.refreshStatuses()
         XCTAssertEqual(manager.managedProcessMemoryRoots[.llamaChat], .noOwnedPID(reason: "Recorded PID 123 command does not match the expected runtime"))
     }
+
 
     func testValidationAndStartAllPortCollision() {
         let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)

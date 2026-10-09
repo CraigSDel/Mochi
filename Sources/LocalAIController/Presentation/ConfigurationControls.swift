@@ -2,19 +2,24 @@ import SwiftUI
 
 struct ConfigurationField<Content: View>: View {
     let title: String
+    let help: PerformanceSettingHelp?
     let content: Content
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
+    init(_ title: String, help: PerformanceSettingHelp? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.help = help
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .tracking(0.6)
-                .foregroundStyle(AppTheme.secondaryText)
+            HStack(spacing: 4) {
+                Text(title.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(AppTheme.secondaryText)
+                if let help { SettingInfoButton(help: help) }
+            }
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)

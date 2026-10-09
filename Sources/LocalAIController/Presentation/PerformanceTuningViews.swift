@@ -26,7 +26,10 @@ struct PerformanceTuningEditor: View {
                     ThemedMenuPicker(choices: RecommendationRole.allCases.map { ($0.rawValue, $0) }, selection: $selectedRole)
                         .frame(width: 190)
                 }
-                Text("Preset").font(.subheadline.weight(.medium))
+                HStack(spacing: 4) {
+                    Text("Preset").font(.subheadline.weight(.medium))
+                    SettingInfoButton(help: PerformanceSettingHelpCatalog.help(for: .presets))
+                }
                 ForEach(PerformancePreset.allCases) { preset in
                     Button(preset.title) { apply(preset) }.buttonStyle(AppleSecondaryButtonStyle())
                 }
@@ -44,20 +47,23 @@ struct PerformanceTuningEditor: View {
     private var llamaControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
-                ConfigurationField("Context") { number("Tokens", value: llamaBinding(\.contextSize)) }
-                ConfigurationField("GPU layers") { number("Layers", value: llamaBinding(\.gpuLayers)) }
-                ConfigurationField("Batch") { number("Batch", value: llamaBinding(\.batchSize)) }
-                ConfigurationField("Micro-batch") { number("Batch", value: llamaBinding(\.ubatchSize)) }
+                ConfigurationField("Context", help: PerformanceSettingHelpCatalog.help(for: .context)) { number("Tokens", value: llamaBinding(\.contextSize)) }
+                ConfigurationField("GPU layers", help: PerformanceSettingHelpCatalog.help(for: .gpuLayers)) { number("Layers", value: llamaBinding(\.gpuLayers)) }
+                ConfigurationField("Batch", help: PerformanceSettingHelpCatalog.help(for: .batch)) { number("Batch", value: llamaBinding(\.batchSize)) }
+                ConfigurationField("Micro-batch", help: PerformanceSettingHelpCatalog.help(for: .microBatch)) { number("Batch", value: llamaBinding(\.ubatchSize)) }
             }
             HStack(spacing: 12) {
-                ConfigurationField("KV key") { TextField("q8_0", text: llamaBinding(\.kvCacheKeyType)).textFieldStyle(.plain).appInputSurface() }
-                ConfigurationField("KV value") { TextField("q8_0", text: llamaBinding(\.kvCacheValueType)).textFieldStyle(.plain).appInputSurface() }
-                ConfigurationField("Cache reuse") { number("Tokens", value: llamaBinding(\.cacheReuse)) }
-                Toggle("Flash attention", isOn: llamaBinding(\.flashAttention))
+                ConfigurationField("KV key", help: PerformanceSettingHelpCatalog.help(for: .kvKey)) { TextField("q8_0", text: llamaBinding(\.kvCacheKeyType)).textFieldStyle(.plain).appInputSurface() }
+                ConfigurationField("KV value", help: PerformanceSettingHelpCatalog.help(for: .kvValue)) { TextField("q8_0", text: llamaBinding(\.kvCacheValueType)).textFieldStyle(.plain).appInputSurface() }
+                ConfigurationField("Cache reuse", help: PerformanceSettingHelpCatalog.help(for: .cacheReuse)) { number("Tokens", value: llamaBinding(\.cacheReuse)) }
+                HStack(spacing: 4) {
+                    Toggle("Flash attention", isOn: llamaBinding(\.flashAttention))
+                    SettingInfoButton(help: PerformanceSettingHelpCatalog.help(for: .flashAttention))
+                }
             }
             HStack(spacing: 12) {
-                ConfigurationField("Threads") { number("Auto = 0", value: llamaBinding(\.threads)) }
-                ConfigurationField("Batch threads") { number("Auto = 0", value: llamaBinding(\.threadsBatch)) }
+                ConfigurationField("Threads", help: PerformanceSettingHelpCatalog.help(for: .threads)) { number("Auto = 0", value: llamaBinding(\.threads)) }
+                ConfigurationField("Batch threads", help: PerformanceSettingHelpCatalog.help(for: .batchThreads)) { number("Auto = 0", value: llamaBinding(\.threadsBatch)) }
             }
             if hasGeneration { generationFields(llamaBinding(\.generation), title: isAutocomplete ? "Autocomplete response" : "Chat response") }
         }
@@ -75,12 +81,12 @@ struct PerformanceTuningEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title).font(.subheadline.weight(.semibold))
             HStack(spacing: 12) {
-                ConfigurationField("Max output") { number("Tokens", value: field(binding, \.maximumOutputTokens)) }
-                ConfigurationField("Temperature") { decimal("0.7", value: field(binding, \.temperature)) }
-                ConfigurationField("Top-k") { number("Top-k", value: field(binding, \.topK)) }
-                ConfigurationField("Top-p") { decimal("0.9", value: field(binding, \.topP)) }
-                ConfigurationField("Repeat penalty") { decimal("1.1", value: field(binding, \.repeatPenalty)) }
-                ConfigurationField("Autocomplete limit") { number("Tokens", value: field(binding, \.autocompleteOutputLimit)) }
+                ConfigurationField("Max output", help: PerformanceSettingHelpCatalog.help(for: .maxOutput)) { number("Tokens", value: field(binding, \.maximumOutputTokens)) }
+                ConfigurationField("Temperature", help: PerformanceSettingHelpCatalog.help(for: .temperature)) { decimal("0.7", value: field(binding, \.temperature)) }
+                ConfigurationField("Top-k", help: PerformanceSettingHelpCatalog.help(for: .topK)) { number("Top-k", value: field(binding, \.topK)) }
+                ConfigurationField("Top-p", help: PerformanceSettingHelpCatalog.help(for: .topP)) { decimal("0.9", value: field(binding, \.topP)) }
+                ConfigurationField("Repeat penalty", help: PerformanceSettingHelpCatalog.help(for: .repeatPenalty)) { decimal("1.1", value: field(binding, \.repeatPenalty)) }
+                ConfigurationField("Autocomplete limit", help: PerformanceSettingHelpCatalog.help(for: .autocompleteLimit)) { number("Tokens", value: field(binding, \.autocompleteOutputLimit)) }
             }
         }
     }

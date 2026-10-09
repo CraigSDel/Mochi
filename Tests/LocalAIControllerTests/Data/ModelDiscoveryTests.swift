@@ -178,4 +178,33 @@ final class ModelOptionBuilderTests: XCTestCase {
         let keys = ServiceID.allCases.map(ModelCatalogPreferences.key)
         XCTAssertEqual(Set(keys).count, ServiceID.allCases.count)
     }
+
+    func testCatalogRecommendationMatchesLlamaRepositoryAndFilename() {
+        let recommendation = ModelRecommendation(
+            id: "qwen", name: "Qwen", source: "HF", runtime: "llama.cpp", role: .chat,
+            quantization: "Q4", sizeBytes: 16, context: "test", license: "test",
+            compatibility: .compatible, rationale: "test", updatedAt: nil,
+            repository: "owner/model", filename: "model.gguf"
+        )
+        let option = ModelOption(
+            id: "current", runtime: .llamaCpp, name: "Configured", repository: "owner/model",
+            filename: "model.gguf", sizeBytes: nil, roleHint: .chat, availability: .missing
+        )
+
+        XCTAssertEqual(ModelOptionBuilder.recommendation(for: option, from: [recommendation])?.id, "qwen")
+    }
+
+    func testCatalogRecommendationMatchesOllamaWithDefaultLatestTag() {
+        let recommendation = ModelRecommendation(
+            id: "qwen", name: "Qwen", source: "Ollama", runtime: "Ollama", role: .chat,
+            quantization: "Q4", sizeBytes: 16, context: "test", license: "test",
+            compatibility: .compatible, rationale: "test", updatedAt: nil, modelName: "qwen3:latest"
+        )
+        let option = ModelOption(
+            id: "current", runtime: .ollama, name: "qwen3", repository: nil,
+            filename: nil, sizeBytes: nil, roleHint: .chat, availability: .missing
+        )
+
+        XCTAssertEqual(ModelOptionBuilder.recommendation(for: option, from: [recommendation])?.id, "qwen")
+    }
 }

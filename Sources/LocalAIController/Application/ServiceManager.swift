@@ -28,10 +28,10 @@ final class ServiceManager: ObservableObject {
     var recommendationMetadata: [ModelRecommendation] = []
     private static let configurationKey = "serviceLaunchConfigurations.v1"
     let definitions: [ServiceDefinition] = [
-        .init(id: .llamaChat, name: "Qwen Chat", detail: "Qwen3.8-27B chat and reasoning", runtime: "llama.cpp", defaultPort: 11437, modelChoice: "chat", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 17_000_000_000, supported: true, unavailableReason: nil),
-        .init(id: .autocomplete, name: "Code Autocomplete", detail: "Qwen2.5-Coder-1.5B", runtime: "llama.cpp", defaultPort: 11435, modelChoice: "autocomplete", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 1_200_000_000, supported: true, unavailableReason: nil),
-        .init(id: .embeddings, name: "Workspace Embeddings", detail: "Nomic Embed Text v1.5", runtime: "llama.cpp", defaultPort: 11436, modelChoice: "embedding", executable: "llama-server", modelFormat: "GGUF", estimatedBytes: 300_000_000, supported: true, unavailableReason: nil),
-        .init(id: .ollama, name: "Ollama", detail: "Installed chat, coding, and embedding models", runtime: "Ollama", defaultPort: 11434, modelChoice: nil, executable: "ollama", modelFormat: "Ollama manifest", estimatedBytes: 17_000_000_000, supported: true, unavailableReason: nil)
+        .init(id: .llamaChat, name: "Qwen Chat", detail: "Qwen3.8-27B chat and reasoning", runtime: "llama.cpp", modelChoice: "chat", executable: "llama-server", estimatedBytes: 17_000_000_000, supported: true),
+        .init(id: .autocomplete, name: "Code Autocomplete", detail: "Qwen2.5-Coder-1.5B", runtime: "llama.cpp", modelChoice: "autocomplete", executable: "llama-server", estimatedBytes: 1_200_000_000, supported: true),
+        .init(id: .embeddings, name: "Workspace Embeddings", detail: "Nomic Embed Text v1.5", runtime: "llama.cpp", modelChoice: "embedding", executable: "llama-server", estimatedBytes: 300_000_000, supported: true),
+        .init(id: .ollama, name: "Ollama", detail: "Installed chat, coding, and embedding models", runtime: "Ollama", modelChoice: nil, executable: "ollama", estimatedBytes: 17_000_000_000, supported: true)
     ]
     init(probe: (any SystemProbing)? = nil, processFactory: (any ProcessMaking)? = nil, logger: (any ServiceLogging)? = nil, modelManager: (any ModelManaging)? = nil, modelSettingsStore: (any ModelSettingsStoring)? = nil, defaults: UserDefaults = .standard, fileManager: FileManager = .default, startTimer: Bool = true, stopPollAttempts: Int = 20) {
         self.fileManager = fileManager; self.defaults = defaults; self.stopPollAttempts = stopPollAttempts
@@ -70,8 +70,6 @@ final class ServiceManager: ObservableObject {
         }
         if startTimer { timer = Timer.scheduledTimer(withTimeInterval: PerformanceBudgets.servicePollingInterval, repeats: true) { [weak self] _ in Task { @MainActor in await self?.refreshStatuses() } } }
     }
-    var hasManagedRunningServices: Bool { services.contains { $0.pid != nil && [.starting, .running, .stopping].contains($0.state) } }
-    var managedProcessIDs: [ServiceID: Int32] { ManagedProcessOwnership.processIDs(from: managedProcessMemoryRoots) }
     var managedProcessMemoryRoots: [ServiceID: ManagedProcessRoot] { validatedProcessRoots }
     func configuration(for id: ServiceID) -> ServiceLaunchConfiguration { configurations[id] ?? .defaultValue(for: id) }
     func replaceInstalledModels(_ models: [DiscoveredModel]) { installedModels = models }
@@ -80,7 +78,6 @@ final class ServiceManager: ObservableObject {
     func isConfigurationLocked(_ id: ServiceID) -> Bool { services.first(where: { $0.id == id }).map { [.starting, .running, .stopping].contains($0.state) } ?? false }
     func updateConfiguration(_ configuration: ServiceLaunchConfiguration, for id: ServiceID) { guard !isConfigurationLocked(id) else { return }; configurations[id] = configuration; persistConfigurations() }
     func resetConfiguration(_ id: ServiceID) { updateConfiguration(.defaultValue(for: id), for: id) }
-    func port(for id: ServiceID) -> Int? { configurations[id]?.port }
     func wifiIP() async -> String? { await probe.wifiIP() }
     func localNetworkIP() async -> String? {
         if let wifi = await probe.wifiIP() { return wifi }
@@ -243,9 +240,9 @@ final class ServiceManager: ObservableObject {
         do {
             try process.run(); processes[id] = process; logger.record(.launchStarted(pid: process.processIdentifier), serviceID: id); append(id, "Process started with PID \(process.processIdentifier)")
             let identity = ["/bin/bash"] + (process.arguments ?? [])
-            save(.init(serviceID: id, pid: process.processIdentifier, port: config.port, expectedCommand: identity.joined(separator: " "), startedAt: Date(), logPath: logURL(id).path, bindMode: config.bindMode))
+            let record = ManagedProcessRecord(serviceID: id, pid: process.processIdentifier, port: config.port, expectedCommand: identity.joined(separator: " "), runtimeCommand: nil, startedAt: Date(), logPath: logURL(id).path, bindMode: config.bindMode); save(record)
             services[index].pid = process.processIdentifier; services[index].endpoint = Self.endpoint(id, config.port, hosts.display)
-            try? await Task.sleep(for: .seconds(1)); await refreshStatuses()
+            try? await Task.sleep(for: .seconds(1)); await captureRuntimeIdentity(for: record); await refreshStatuses()
         } catch { outputHandles[id] = nil; try? handle.close(); fail(index, "Failed to launch the service.", error.localizedDescription) }
     }
 
@@ -293,7 +290,7 @@ final class ServiceManager: ObservableObject {
     private func recordsURL() -> URL { probe.supportDirectory.appendingPathComponent("processes.json") }
     private func allRecords() -> [ManagedProcessRecord] { (try? Data(contentsOf: recordsURL())).flatMap { try? JSONDecoder().decode([ManagedProcessRecord].self, from: $0) } ?? [] }
     private func loadRecord(_ id: ServiceID) -> ManagedProcessRecord? { allRecords().first { $0.serviceID == id } }
-    private func save(_ record: ManagedProcessRecord) { var records = allRecords().filter { $0.serviceID != record.serviceID }; records.append(record); if let data = try? JSONEncoder().encode(records) { try? data.write(to: recordsURL(), options: .atomic) } }
+    func save(_ record: ManagedProcessRecord) { var records = allRecords().filter { $0.serviceID != record.serviceID }; records.append(record); if let data = try? JSONEncoder().encode(records) { try? data.write(to: recordsURL(), options: .atomic) } }
     private func removeRecord(_ id: ServiceID) { if let data = try? JSONEncoder().encode(allRecords().filter { $0.serviceID != id }) { try? data.write(to: recordsURL(), options: .atomic) } }
     private func validate(_ record: ManagedProcessRecord) async -> Bool { let root = await ManagedProcessOwnership.root(record, probe: probe); validatedProcessRoots[record.serviceID] = root; if case .owned = root { return true }; return false }
     private func tail(_ path: String) -> String { guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else { return "" }; defer { try? handle.close() }; let size = (try? handle.seekToEnd()) ?? 0; let limit = UInt64(PerformanceBudgets.maximumServiceLogBytes); try? handle.seek(toOffset: size > limit ? size - limit : 0); return String(data: handle.readDataToEndOfFile(), encoding: .utf8) ?? "" }

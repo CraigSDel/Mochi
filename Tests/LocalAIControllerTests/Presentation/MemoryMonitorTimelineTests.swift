@@ -6,9 +6,9 @@ final class MemoryMonitorTimelineTests: XCTestCase {
     func testCaptureKeepsChartTimelineStrictlyIncreasingAfterModalPause() async {
         let monitor = MemoryMonitor(probe: ModalPauseMemoryProbe())
 
-        await monitor.capture(at: Date(timeIntervalSince1970: 10), servicePIDs: [:])
-        await monitor.capture(at: Date(timeIntervalSince1970: 12), servicePIDs: [:])
-        await monitor.capture(at: Date(timeIntervalSince1970: 11), servicePIDs: [:])
+        await monitor.capture(at: Date(timeIntervalSince1970: 10), serviceRoots: [:])
+        await monitor.capture(at: Date(timeIntervalSince1970: 12), serviceRoots: [:])
+        await monitor.capture(at: Date(timeIntervalSince1970: 11), serviceRoots: [:])
 
         let timestamps = monitor.samples.map(\.timestamp)
         XCTAssertEqual(timestamps.count, 3)

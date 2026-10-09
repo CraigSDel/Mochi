@@ -48,21 +48,13 @@ extension ServiceManager {
         Task { await modelSettingsStore.save(updated) }
     }
 
-    func resetModelSettings(for serviceID: ServiceID, role: RecommendationRole? = nil) {
-        let key = modelAssignmentKey(for: serviceID, role: role)
-        var updated = modelSettings
-        updated[key] = .defaults(runtime: key.runtime, role: key.role)
-        replaceModelSettings(updated)
-        Task { await modelSettingsStore.save(updated) }
-    }
-
     func refreshModelInventory() async { replaceInstalledModels(await modelManager.discover()) }
     func updateModelMetadata(_ metadata: [String: ModelMetadata]) {
         replaceModelMetadata(metadata)
         Task { await modelManager.saveMetadata(metadata) }
     }
-    func downloadModel(_ recommendation: ModelRecommendation) async throws {
-        try await modelManager.download(recommendation)
+    func downloadModel(_ recommendation: ModelRecommendation, progress: @escaping @Sendable (ModelDownloadProgress) -> Void) async throws {
+        try await modelManager.download(recommendation, progress: progress)
         await refreshModelInventory()
     }
     func deleteModel(_ model: DiscoveredModel) async throws {

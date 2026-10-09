@@ -5,12 +5,9 @@ struct ServiceDetail: View {
     let service: ServiceSnapshot
     @ObservedObject var manager: ServiceManager
     @ObservedObject var recommendations: RecommendationStore
+    let openModels: () -> Void
     @State private var logsExpanded = false
 
-    private var canStart: Bool {
-        service.state.canStart && service.definition.supported && manager.validationIssues(for: service.id).isEmpty
-    }
-    private var canStop: Bool { service.state.canStop && service.pid != nil }
     private var logPreview: String {
         let lines = service.logText.split(separator: "\n", omittingEmptySubsequences: false)
         return lines.suffix(4).joined(separator: "\n")
@@ -31,47 +28,9 @@ struct ServiceDetail: View {
                     StatusBadge(state: service.state)
                 }
 
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(service.statusText)
-                            .font(.headline)
-                            .foregroundStyle(service.state == .failed ? Color.red : Color.primary)
-                        Text(service.state == .running ? "The service is responding to health checks." : "Configuration remains available while the service is idle.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if let endpoint = service.endpoint {
-                        HStack(spacing: 8) {
-                            MetadataLabel(title: "Endpoint", value: endpoint, symbol: "network")
-                            Button {
-                                NSPasteboard.general.clearContents(); NSPasteboard.general.setString(endpoint, forType: .string)
-                            } label: { Label("Copy endpoint", systemImage: "doc.on.doc") }
-                                .labelStyle(.iconOnly)
-                                .buttonStyle(AppleIconButtonStyle())
-                                .help("Copy endpoint")
-                        }
-                        .textSelection(.enabled)
-                    } else {
-                        MetadataLabel(title: "Port", value: "\(manager.configuration(for: service.id).port)", symbol: "number")
-                    }
-                }
-                .appCard()
+                ServiceStatusCard(service: service, manager: manager)
 
-                ServiceConfigurationEditor(serviceID: service.id, manager: manager, recommendations: recommendations)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Service controls").font(.headline)
-                        Text("Changes are validated before the runtime is launched.").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Stop", role: .destructive) { Task { await manager.stop(service.id) } }
-                        .buttonStyle(AppleDestructiveButtonStyle())
-                        .disabled(!canStop)
-                    Button("Start Service") { attemptStart(service.id, manager: manager) }
-                        .buttonStyle(ApplePrimaryButtonStyle()).disabled(!canStart)
-                }
-                .appCard()
+                ServiceConfigurationEditor(serviceID: service.id, manager: manager, recommendations: recommendations, openModels: openModels)
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -113,9 +72,10 @@ struct ServiceConfigurationEditor: View {
     let serviceID: ServiceID
     @ObservedObject var manager: ServiceManager
     @ObservedObject var recommendations: RecommendationStore
+    let openModels: () -> Void
     @State private var advanced = false
     @AppStorage private var includeCatalog: Bool
-    init(serviceID: ServiceID, manager: ServiceManager, recommendations: RecommendationStore) { self.serviceID = serviceID; self.manager = manager; self.recommendations = recommendations; _includeCatalog = AppStorage(wrappedValue: true, ModelCatalogPreferences.key(for: serviceID)) }
+    init(serviceID: ServiceID, manager: ServiceManager, recommendations: RecommendationStore, openModels: @escaping () -> Void) { self.serviceID = serviceID; self.manager = manager; self.recommendations = recommendations; self.openModels = openModels; _includeCatalog = AppStorage(wrappedValue: true, ModelCatalogPreferences.key(for: serviceID)) }
     private var configuration: ServiceLaunchConfiguration { manager.configuration(for: serviceID) }
     private var locked: Bool { manager.isConfigurationLocked(serviceID) }
     var body: some View {
@@ -191,14 +151,14 @@ struct ServiceConfigurationEditor: View {
 
     private var llamaFields: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ModelSelector(title: "Model", options: llamaOptions, selection: llamaSelection) { option in
+            DownloadableModelSelector(title: "Model", options: llamaOptions, selection: llamaSelection, recommendations: recommendations.recommendations, manager: manager, onSelect: { option in
                 guard let repository = option.repository, let filename = option.filename else { return }
                 var copy = configuration
                 copy.llama?.repository = repository
                 copy.llama?.filename = filename
                 copy.llama?.alias = option.name
                 manager.updateConfiguration(copy, for: serviceID)
-            }
+            }, onManageDownloads: openModels)
         }
     }
     private var llamaAdvanced: some View {
@@ -260,11 +220,11 @@ struct ServiceConfigurationEditor: View {
         let current = configuration.ollama![keyPath: keyPath]
         let options = ModelOptionBuilder.options(runtime: .ollama, role: role, installed: manager.installedModels, recommendations: recommendations.recommendations, currentOllamaName: current, includeCatalog: includeCatalog)
         let selection = options.first { ModelOptionBuilder.selectionKey($0) == OllamaModelReference.key(current) }?.id ?? ""
-        ModelSelector(title: title, options: options, selection: selection) { option in
+        DownloadableModelSelector(title: title, options: options, selection: selection, recommendations: recommendations.recommendations, manager: manager, onSelect: { option in
             var copy = configuration
             copy.ollama![keyPath: keyPath] = option.name
             manager.updateConfiguration(copy, for: serviceID)
-        }
+        }, onManageDownloads: openModels)
     }
     @ViewBuilder
     private var contextLengthControl: some View {

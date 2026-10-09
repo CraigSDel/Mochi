@@ -51,37 +51,6 @@ final class RecommendationStoreTests: XCTestCase {
         XCTAssertTrue(store.recommendations.contains { $0.id == "cached" })
     }
 
-    func testDownloadQueuePersistsDeduplicatesAndRemoves() throws {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        defaults.set(Date(), forKey: "recommendationsLastChecked")
-        let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let model = recommendation()
-        let store = RecommendationStore(providers: [], defaults: defaults, cacheURL: cacheURL, startTimer: false)
-
-        store.addToDownloadQueue(model)
-        store.addToDownloadQueue(model)
-
-        XCTAssertEqual(store.downloadQueue.map(\.id), [model.id])
-        let reloaded = RecommendationStore(providers: [], defaults: defaults, cacheURL: cacheURL, startTimer: false)
-        XCTAssertEqual(reloaded.downloadQueue.map(\.id), [model.id])
-
-        reloaded.removeFromDownloadQueue(model)
-        XCTAssertTrue(reloaded.downloadQueue.isEmpty)
-    }
-
-    func testQueuedModelSurvivesSuccessfulCatalogRefresh() async {
-        let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        defaults.set(Date(), forKey: "recommendationsLastChecked")
-        let provider = StubRecommendationProvider(sourceName: "Registry", result: .success([]))
-        let model = recommendation()
-        let store = RecommendationStore(providers: [provider], defaults: defaults, startTimer: false)
-
-        store.addToDownloadQueue(model)
-        await store.refresh()
-
-        XCTAssertTrue(store.recommendations.contains { $0.id == model.id })
-    }
-
     func testSearchUsesInjectedProviderAndPublishesResults() async {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
         defaults.set(Date(), forKey: "recommendationsLastChecked")

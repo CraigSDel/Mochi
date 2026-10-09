@@ -8,7 +8,7 @@ framework layers.
 | `*View.swift`, `ConfigurationControls.swift` | Render state, collect intent, present confirmations | Probe the system, launch processes, or duplicate policy |
 | `ServiceManager.swift`, `LaunchActions.swift` | Orchestrate service state and lifecycle on `@MainActor` | Hide blocking work in synchronous UI paths |
 | `ServiceModels.swift`, `RecommendationModels.swift` | Value types, enums, validation and compatibility policy | Import SwiftUI for presentation concerns |
-| `SystemProbe.swift`, `ModelInventory.swift`, diagnostics/monitoring files | Isolate OS, filesystem, process, and network observations | Mutate view state directly |
+| `SystemProbe.swift`, model inventory, diagnostics/monitoring files | Isolate OS, filesystem, process, and network observations | Mutate view state directly |
 | `Recommendations.swift` | Fetch, cache, and normalize external recommendation data | Make recommendations required for core service control |
 | launcher scripts | Translate validated configuration into runtime commands | Install software, use privilege elevation, or silently broaden network exposure |
 

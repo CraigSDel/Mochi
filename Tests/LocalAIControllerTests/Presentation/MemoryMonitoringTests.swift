@@ -9,7 +9,7 @@ final class MemoryMonitoringTests: XCTestCase {
         let probe = FakeMemoryProbe(systemUsed: 12, systemTotal: 32, footprints: [10: 4, 20: 7])
         let monitor = MemoryMonitor(probe: probe, maximumSampleCount: 10)
 
-        await monitor.capture(at: Date(timeIntervalSince1970: 1), servicePIDs: [.llamaChat: 10, .ollama: 20])
+        await monitor.capture(at: Date(timeIntervalSince1970: 1), serviceRoots: ownedRoots([.llamaChat: 10, .ollama: 20]))
 
         XCTAssertEqual(monitor.currentSample?.systemUsedBytes, 12)
         XCTAssertEqual(monitor.currentSample?.systemTotalBytes, 32)
@@ -23,7 +23,7 @@ final class MemoryMonitoringTests: XCTestCase {
         let monitor = MemoryMonitor(probe: probe, maximumSampleCount: 3)
 
         for second in 0..<5 {
-            await monitor.capture(at: Date(timeIntervalSince1970: Double(second)), servicePIDs: [:])
+            await monitor.capture(at: Date(timeIntervalSince1970: Double(second)), serviceRoots: [:])
         }
 
         XCTAssertEqual(monitor.samples.count, 3)
@@ -55,7 +55,7 @@ final class MemoryMonitoringTests: XCTestCase {
         let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2)
         let monitor = MemoryMonitor(probe: probe, wakeNotificationCenter: notificationCenter)
 
-        await monitor.start(servicePIDs: { [:] })
+        await monitor.start(serviceRoots: { [:] })
         probe.systemReading = .init(usedBytes: 2, totalBytes: 2)
         notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
         await Task.yield()
@@ -71,7 +71,7 @@ final class MemoryMonitoringTests: XCTestCase {
         let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2)
         let monitor = MemoryMonitor(probe: probe, wakeNotificationCenter: notificationCenter)
 
-        await monitor.start(servicePIDs: { [:] })
+        await monitor.start(serviceRoots: { [:] })
         monitor.stop()
         notificationCenter.post(name: NSWorkspace.didWakeNotification, object: nil)
         await Task.yield()
@@ -82,14 +82,14 @@ final class MemoryMonitoringTests: XCTestCase {
     func testUnavailableAndRestartedServicesDoNotLeaveStaleValues() async {
         let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2, footprints: [10: 5])
         let monitor = MemoryMonitor(probe: probe)
-        await monitor.capture(servicePIDs: [.ollama: 10])
+        await monitor.capture(serviceRoots: ownedRoots([.ollama: 10]))
 
         probe.footprints = [:]
-        await monitor.capture(servicePIDs: [.ollama: 10])
+        await monitor.capture(serviceRoots: ownedRoots([.ollama: 10]))
         XCTAssertNil(monitor.currentSample?.serviceBytes[.ollama])
 
         probe.footprints = [30: 9]
-        await monitor.capture(servicePIDs: [.ollama: 30])
+        await monitor.capture(serviceRoots: ownedRoots([.ollama: 30]))
         XCTAssertEqual(monitor.currentSample?.serviceBytes[.ollama], 9)
     }
 
@@ -97,7 +97,7 @@ final class MemoryMonitoringTests: XCTestCase {
         let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2, footprints: [10: 0])
         let monitor = MemoryMonitor(probe: probe)
 
-        await monitor.capture(at: Date(timeIntervalSince1970: 1), servicePIDs: [.llamaChat: 10, .ollama: 20])
+        await monitor.capture(at: Date(timeIntervalSince1970: 1), serviceRoots: ownedRoots([.llamaChat: 10, .ollama: 20]))
 
         XCTAssertEqual(monitor.currentSample?.serviceReadings[.llamaChat], .measured(bytes: 0))
         XCTAssertEqual(monitor.currentSample?.serviceReadings[.ollama], .footprintUnavailable(pid: 20))
@@ -105,7 +105,7 @@ final class MemoryMonitoringTests: XCTestCase {
         XCTAssertEqual(monitor.currentSample?.managedBytes, 0)
         XCTAssertEqual(MemoryFormatting.managedUsage(monitor.currentSample!), "Partial reading")
 
-        await monitor.capture(at: Date(timeIntervalSince1970: 2), servicePIDs: [.llamaChat: 10])
+        await monitor.capture(at: Date(timeIntervalSince1970: 2), serviceRoots: ownedRoots([.llamaChat: 10]))
         XCTAssertEqual(monitor.currentSample?.serviceReadings[.llamaChat], .measured(bytes: 0))
         XCTAssertEqual(MemoryFormatting.managedUsage(monitor.currentSample!), "Zero KB")
     }
@@ -115,7 +115,7 @@ final class MemoryMonitoringTests: XCTestCase {
         let monitor = MemoryMonitor(probe: probe)
         probe.systemReading = nil
 
-        await monitor.capture(servicePIDs: [.llamaChat: 10])
+        await monitor.capture(serviceRoots: ownedRoots([.llamaChat: 10]))
 
         XCTAssertTrue(monitor.samples.isEmpty)
     }
@@ -275,6 +275,12 @@ final class MemoryMonitoringTests: XCTestCase {
             systemTotalBytes: 1,
             serviceBytes: [:]
         )
+    }
+
+    private func ownedRoots(_ pids: [ServiceID: Int32]) -> [ServiceID: ManagedProcessRoot] {
+        Dictionary(uniqueKeysWithValues: ServiceID.allCases.map { id in
+            (id, pids[id].map(ManagedProcessRoot.owned) ?? .noOwnedPID(reason: "No validated owned PID"))
+        })
     }
 }
 

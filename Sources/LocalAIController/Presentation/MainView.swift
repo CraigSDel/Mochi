@@ -6,6 +6,14 @@ struct MainView: View {
     @ObservedObject var recommendations: RecommendationStore
     @ObservedObject var memoryMonitor: MemoryMonitor
     @State private var selection: SidebarDestination = .initial
+    @StateObject private var downloads: ModelDownloadCoordinator
+
+    init(manager: ServiceManager, recommendations: RecommendationStore, memoryMonitor: MemoryMonitor) {
+        self.manager = manager
+        self.recommendations = recommendations
+        self.memoryMonitor = memoryMonitor
+        _downloads = StateObject(wrappedValue: ModelDownloadCoordinator(manager: manager))
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -46,13 +54,13 @@ struct MainView: View {
             case .overview:
                 OverviewView(manager: manager, recommendations: recommendations, memoryMonitor: memoryMonitor, selection: $selection)
             case .models:
-                ModelsView(manager: manager, recommendations: recommendations)
+                ModelsView(manager: manager, recommendations: recommendations, downloads: downloads)
             case .service(let serviceID):
                 if let service = manager.services.first(where: { $0.id == serviceID }) {
-                    ServiceDetail(service: service, manager: manager, recommendations: recommendations)
+                    ServiceDetail(service: service, manager: manager, recommendations: recommendations) { selection = .models }
                 }
             case .recommendations:
-                RecommendationsView(store: recommendations, guidance: manager.performanceGuidance())
+                RecommendationsView(store: recommendations, downloads: downloads, guidance: manager.performanceGuidance())
             }
         }
         .background(AppTheme.pageBackground)

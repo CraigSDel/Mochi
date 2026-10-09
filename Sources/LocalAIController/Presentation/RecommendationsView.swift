@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecommendationsView: View {
     @ObservedObject var store: RecommendationStore
+    @ObservedObject var downloads: ModelDownloadCoordinator
     let guidance: [PerformanceGuidance]
     @State private var role: RecommendationRole?
     @State private var searchText = ""
@@ -105,10 +106,6 @@ struct RecommendationsView: View {
                     PerformanceGuidanceCard(guidance: item)
                 }
 
-                if !store.downloadQueue.isEmpty {
-                    DownloadQueueSection(store: store)
-                }
-
                 if filtered.isEmpty && !store.isRefreshing && !store.isSearching {
                     FriendlyEmptyState(
                         symbol: isSearchingCatalog ? "magnifyingglass" : (hasFailure ? "wifi.exclamationmark" : "sparkles"),
@@ -120,9 +117,9 @@ struct RecommendationsView: View {
                         ForEach(filtered) { model in
                             RecommendationCard(
                                 model: model,
-                                queued: store.isQueued(model),
-                                canQueue: store.canQueue(model),
-                                onQueue: { store.addToDownloadQueue(model) }
+                                queued: downloads.isQueued(model),
+                                canQueue: model.compatibility != .incompatible,
+                                onQueue: { downloads.enqueue(model) }
                             )
                         }
                     }
@@ -170,7 +167,6 @@ struct RecommendationsView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
-
 private struct PerformanceGuidanceCard: View {
     let guidance: PerformanceGuidance
 
@@ -258,29 +254,6 @@ private struct RecommendationCard: View {
                 }
                 .buttonStyle(AppleSecondaryButtonStyle())
                 .disabled(queued)
-            }
-        }
-        .appCard()
-    }
-}
-
-private struct DownloadQueueSection: View {
-    @ObservedObject var store: RecommendationStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionHeading("Download list", subtitle: "Select a queued model in a llama.cpp service to download it when that service starts.", symbol: "arrow.down.circle")
-            ForEach(store.downloadQueue) { model in
-                HStack(spacing: 10) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(model.name).font(.subheadline.weight(.medium))
-                        Text("\(model.quantization) · \(model.sizeText)").font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button("Remove") { store.removeFromDownloadQueue(model) }
-                        .buttonStyle(AppleSecondaryButtonStyle())
-                }
-                .padding(.vertical, 3)
             }
         }
         .appCard()
