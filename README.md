@@ -1,7 +1,7 @@
 # Mochi
 
 <p align="center">
-  <img src="AppResources/AppIcon.png" alt="Mochi icon" width="128">
+  <img src="AppResources/AppIcon.mov" alt="Mochi icon" width="128">
 </p>
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-0B83FF?style=flat-square&logo=apple&labelColor=141414)
