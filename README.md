@@ -39,7 +39,7 @@ The controller exposes llama.cpp endpoints over your chosen network binding.
 This overview is a real capture of the app with all three services stopped;
 it shows the control center, memory dashboard, service cards, and navigation.
 
-![Mochi overview showing the control center, memory dashboard, and three llama.cpp service cards.](docs/videos/controller-overview.mov)
+![Mochi overview showing the control center, memory dashboard, and three llama.cpp service cards.](docs/videos/controller-overview.gif)
 
 ## Requirements
 
