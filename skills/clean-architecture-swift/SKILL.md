@@ -48,8 +48,8 @@ App/
 └── Presentation/Features/[FeatureName]/{Views,ViewModels,Navigation}/
 ```
 
-In this repository, preserve the established `Sources/LocalAIController` and
-`Tests/LocalAIControllerTests` layout rather than mechanically creating an
+In this repository, preserve the established `Sources/Mochi` and
+`Tests/MochiTests` layout rather than mechanically creating an
 `App/` tree. Add focused files for distinct responsibilities and keep authored
 files within the repository's line-length gate.
 

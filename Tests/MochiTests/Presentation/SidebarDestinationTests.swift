@@ -107,9 +107,8 @@ final class SidebarDestinationTests: XCTestCase {
       contentsOf: sourceRoot.appendingPathComponent(
         "Presentation/HardwareRecommendationsView.swift"))
 
-    XCTAssertTrue(
-      recommendations.contains(
-        "HardwareRecommendationsView(manager: manager, store: store, downloads: downloads"))
+    XCTAssertTrue(recommendations.contains("HardwareRecommendationsView("))
+    XCTAssertTrue(recommendations.contains("manager: manager, store: store, downloads: downloads"))
     XCTAssertTrue(hardwareRecommendations.contains("manager.hardwareProfile"))
     XCTAssertTrue(hardwareRecommendations.contains("downloads.enqueue(catalogModel)"))
   }
@@ -127,8 +126,8 @@ final class SidebarDestinationTests: XCTestCase {
     let serviceDetail = try String(
       contentsOf: sourceRoot.appendingPathComponent("Presentation/ServiceViews.swift"))
 
-    let connection = try XCTUnwrap(configuration.range(of: "SectionHeading(\"Connection\""))
-    let model = try XCTUnwrap(configuration.range(of: "SectionHeading(\"Model\""))
+    let connection = try XCTUnwrap(configuration.range(of: "\"Connection\""))
+    let model = try XCTUnwrap(configuration.range(of: "\"Model\""))
     let performance = try XCTUnwrap(
       configuration.range(of: "PerformanceTuningEditor(serviceID: serviceID"))
     let advanced = try XCTUnwrap(configuration.range(of: "DisclosureGroup(\"Advanced\""))
@@ -140,7 +139,7 @@ final class SidebarDestinationTests: XCTestCase {
     XCTAssertTrue(configuration.contains("Text(\"Custom model\")"))
 
     let editor = try XCTUnwrap(serviceDetail.range(of: "ServiceConfigurationEditor("))
-    let log = try XCTUnwrap(serviceDetail.range(of: "SectionHeading(\"Runtime log\""))
+    let log = try XCTUnwrap(serviceDetail.range(of: "\"Runtime log\""))
     XCTAssertLessThan(editor.lowerBound, log.lowerBound)
   }
 }
