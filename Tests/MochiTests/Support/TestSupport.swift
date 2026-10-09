@@ -109,7 +109,9 @@ final class StubFetcher: HTTPFetching, @unchecked Sendable {
   }
 
   func requestCount(matching pathSuffix: String) -> Int {
-    lock.withLock { requestedPaths.filter { $0.hasSuffix(pathSuffix) }.count }
+    lock.withLock {
+      requestedPaths.filter { normalizedPath($0).hasSuffix(pathSuffix) }.count
+    }
   }
 
   func fetch(_ url: URL, timeout: TimeInterval) async throws -> HTTPResponse {
@@ -118,11 +120,21 @@ final class StubFetcher: HTTPFetching, @unchecked Sendable {
       requestedURLs.append(url)
       timeouts.append(timeout)
     }
-    let match = lock.withLock { responses.first { url.path.hasSuffix($0.key) }?.value }
+    let match = lock.withLock {
+      let path = normalizedPath(url.path)
+      return
+        responses
+        .sorted { $0.key.count > $1.key.count }
+        .first { path.hasSuffix($0.key) }?.value
+    }
     switch match {
     case .success(let response): return response
     case .failure(let error): throw error
     case nil: throw URLError(.badURL)
     }
+  }
+
+  private func normalizedPath(_ path: String) -> String {
+    path.removingPercentEncoding ?? path
   }
 }
