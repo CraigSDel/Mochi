@@ -161,7 +161,11 @@ Detailed guidance lives in [`docs/`](docs/):
 
 ## License
 
-This repository is not currently under an explicit license. Copyright remains
-with its author, and no rights beyond local, personal use are granted. If you
-want to publish or share it, add a `LICENSE` file and update this section to
-name the chosen license.
+This project is intended to be released under the [PolyForm Noncommercial
+License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/).
+Personal, educational, research, and other noncommercial use is permitted.
+
+Commercial use—including selling this software, bundling it into a paid
+product, or offering it as a paid service—requires a separate commercial
+license from the copyright holder. Contact the copyright holder to discuss
+commercial licensing and fees.
