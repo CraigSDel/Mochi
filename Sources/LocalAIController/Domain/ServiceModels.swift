@@ -56,70 +56,21 @@ struct LlamaLaunchConfiguration: Codable, Equatable, Sendable {
     }
 }
 
-struct OllamaLaunchConfiguration: Codable, Equatable, Sendable {
-    var chatModel: String
-    var autocompleteModel: String
-    var embeddingModel: String
-    var flashAttention: Bool
-    var kvCacheType: String
-    var contextLength: Int
-    var parallelRequests: Int
-    var maxLoadedModels: Int
-    var chatGeneration: GenerationProfile
-    var autocompleteGeneration: GenerationProfile
-
-    init(
-        chatModel: String, autocompleteModel: String, embeddingModel: String,
-        flashAttention: Bool, kvCacheType: String, contextLength: Int,
-        parallelRequests: Int, maxLoadedModels: Int,
-        chatGeneration: GenerationProfile = .balanced,
-        autocompleteGeneration: GenerationProfile = .autocompleteBalanced
-    ) {
-        self.chatModel = chatModel; self.autocompleteModel = autocompleteModel
-        self.embeddingModel = embeddingModel; self.flashAttention = flashAttention
-        self.kvCacheType = kvCacheType; self.contextLength = contextLength
-        self.parallelRequests = parallelRequests; self.maxLoadedModels = maxLoadedModels
-        self.chatGeneration = chatGeneration; self.autocompleteGeneration = autocompleteGeneration
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case chatModel, autocompleteModel, embeddingModel, flashAttention, kvCacheType
-        case contextLength, parallelRequests, maxLoadedModels, chatGeneration, autocompleteGeneration
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        chatModel = try c.decode(String.self, forKey: .chatModel)
-        autocompleteModel = try c.decode(String.self, forKey: .autocompleteModel)
-        embeddingModel = try c.decode(String.self, forKey: .embeddingModel)
-        flashAttention = try c.decodeIfPresent(Bool.self, forKey: .flashAttention) ?? true
-        kvCacheType = try c.decodeIfPresent(String.self, forKey: .kvCacheType) ?? "q8_0"
-        contextLength = try c.decodeIfPresent(Int.self, forKey: .contextLength) ?? 16_384
-        parallelRequests = try c.decodeIfPresent(Int.self, forKey: .parallelRequests) ?? 2
-        maxLoadedModels = try c.decodeIfPresent(Int.self, forKey: .maxLoadedModels) ?? 1
-        chatGeneration = try c.decodeIfPresent(GenerationProfile.self, forKey: .chatGeneration) ?? .balanced
-        autocompleteGeneration = try c.decodeIfPresent(GenerationProfile.self, forKey: .autocompleteGeneration) ?? .autocompleteBalanced
-    }
-}
-
 struct ServiceLaunchConfiguration: Codable, Equatable, Sendable {
     var port: Int
     var bindMode: BindMode
     var downloadPolicy: DownloadPolicy
     var llama: LlamaLaunchConfiguration?
-    var ollama: OllamaLaunchConfiguration?
 
     static func defaultValue(for id: ServiceID) -> Self {
         let common = (BindMode.tailscale, DownloadPolicy.cachedOnly)
         switch id {
         case .llamaChat:
-            return .init(port: 11437, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "unsloth/Qwen3.8-27B-GGUF", filename: "Qwen3.8-27B-UD-Q4_K_M.gguf", alias: "Qwen3.8-27B", contextSize: 16_384, gpuLayers: 99), ollama: nil)
+            return .init(port: 11437, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "unsloth/Qwen3.8-27B-GGUF", filename: "Qwen3.8-27B-UD-Q4_K_M.gguf", alias: "Qwen3.8-27B", contextSize: 16_384, gpuLayers: 99))
         case .autocomplete:
-            return .init(port: 11435, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", filename: "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", alias: "Qwen2.5-Coder-1.5B", contextSize: 8_192, gpuLayers: 99), ollama: nil)
+            return .init(port: 11435, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", filename: "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf", alias: "Qwen2.5-Coder-1.5B", contextSize: 8_192, gpuLayers: 99))
         case .embeddings:
-            return .init(port: 11436, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "nomic-ai/nomic-embed-text-v1.5-GGUF", filename: "nomic-embed-text-v1.5.Q8_0.gguf", alias: "nomic-embed-text", contextSize: 8_192, gpuLayers: 99), ollama: nil)
-        case .ollama:
-            return .init(port: 11434, bindMode: common.0, downloadPolicy: common.1, llama: nil, ollama: .init(chatModel: "qwen3.8:27b", autocompleteModel: "qwen2.5-coder:1.5b", embeddingModel: "nomic-embed-text:v1.5", flashAttention: true, kvCacheType: "q8_0", contextLength: 16_384, parallelRequests: 2, maxLoadedModels: 1))
+            return .init(port: 11436, bindMode: common.0, downloadPolicy: common.1, llama: .init(repository: "nomic-ai/nomic-embed-text-v1.5-GGUF", filename: "nomic-embed-text-v1.5.Q8_0.gguf", alias: "nomic-embed-text", contextSize: 8_192, gpuLayers: 99))
         }
     }
 

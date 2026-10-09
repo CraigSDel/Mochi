@@ -9,7 +9,7 @@ struct PerformanceGuidanceCard: View {
                 Image(systemName: "speedometer").font(.title2.weight(.semibold)).foregroundStyle(tone).frame(width: 38, height: 38)
                     .background(tone.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Performance guidance · \(guidance.runtime == .ollama ? "Ollama" : "llama.cpp")").font(.headline)
+                    Text("Performance guidance · llama.cpp").font(.headline)
                     Text(guidance.modelLabel).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()

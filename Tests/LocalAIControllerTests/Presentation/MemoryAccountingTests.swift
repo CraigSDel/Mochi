@@ -66,7 +66,7 @@ final class MemoryAccountingTests: XCTestCase {
             timestamp: .now,
             systemUsedBytes: 20,
             systemTotalBytes: 32,
-            serviceReadings: [.llamaChat: .measured(bytes: 7), .ollama: .measured(bytes: 5)]
+                serviceReadings: [.llamaChat: .measured(bytes: 7), .embeddings: .measured(bytes: 5)]
         )
 
         XCTAssertEqual(MemoryAccounting.otherSystemUsage(systemUsedBytes: 20, managedBytes: 12), 8)
@@ -95,7 +95,7 @@ final class MemoryAccountingTests: XCTestCase {
             systemTotalBytes: 32,
             serviceReadings: [
                 .llamaChat: .measured(bytes: 4),
-                .ollama: .footprintUnavailable(pid: 42),
+                .autocomplete: .footprintUnavailable(pid: 42),
                 .embeddings: .noOwnedPID(reason: "Stopped")
             ]
         )
@@ -103,7 +103,7 @@ final class MemoryAccountingTests: XCTestCase {
         XCTAssertTrue(sample.readingsMayBeIncomplete)
         XCTAssertEqual(sample.composition.managedBytes, 4)
         XCTAssertEqual(sample.otherSystemUsageBytes, 6)
-        XCTAssertNil(sample.composition.segments.first { $0.serviceID == .ollama })
+        XCTAssertNil(sample.composition.segments.first { $0.serviceID == .autocomplete })
         XCTAssertEqual(sample.composition.segments.map(\.bytes).reduce(0, +), sample.systemUsedBytes)
     }
 

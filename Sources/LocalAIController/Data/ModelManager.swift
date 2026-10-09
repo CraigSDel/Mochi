@@ -18,8 +18,6 @@ final class LiveModelManager: ModelManaging, @unchecked Sendable {
     init(
         fileManager: FileManager = .default,
         downloadClient: any ModelDownloadClient = URLSessionModelDownloadClient(),
-        commandRunner: (any RuntimeCommandRunning)? = nil,
-        ollamaModelsURL: URL? = nil,
         huggingFaceHubURL: URL? = nil,
         metadataURL: URL? = nil,
         inventory: (any ModelInventoryProviding)? = nil,
@@ -28,14 +26,12 @@ final class LiveModelManager: ModelManaging, @unchecked Sendable {
     ) {
         self.inventory = inventory ?? LiveModelInventorySource(
             fileManager: fileManager,
-            ollamaModelsURL: ollamaModelsURL,
             huggingFaceHubURL: huggingFaceHubURL
         )
         self.metadata = metadata ?? FileModelMetadataStore(metadataURL: metadataURL)
         self.transfer = transfer ?? LiveModelTransferService(
             fileManager: fileManager,
             downloadClient: downloadClient,
-            commandRunner: commandRunner ?? LiveRuntimeCommandRunner(fileManager: fileManager),
             huggingFaceHubURL: huggingFaceHubURL
         )
     }

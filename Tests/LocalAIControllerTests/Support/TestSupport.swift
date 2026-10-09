@@ -4,7 +4,7 @@ import Foundation
 final class FakeProbe: SystemProbing, @unchecked Sendable {
     let supportDirectory: URL
     var physicalMemory: UInt64 = 36 * 1_073_741_824
-    var commands: [String: String] = ["tailscale": "/fake/tailscale", "llama-server": "/fake/llama-server", "ollama": "/fake/ollama"]
+    var commands: [String: String] = ["tailscale": "/fake/tailscale", "llama-server": "/fake/llama-server"]
     var occupiedPorts: Set<Int> = []
     var portListeningCheck: ((Int) -> Bool)?
     var tailnetIP: String? = "100.64.0.1"

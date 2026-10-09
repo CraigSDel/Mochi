@@ -1,18 +1,23 @@
 # Local AI Controller
 
+<p align="center">
+  <img src="AppResources/AppIcon.png" alt="Local AI Controller icon" width="128">
+</p>
+
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-0B83FF?style=flat-square&logo=apple&labelColor=141414)
 ![Swift 6](https://img.shields.io/badge/Swift-6.0-FA7343?style=flat-square&logo=swift&labelColor=141414)
 
 Local AI Controller is a native macOS menu-bar and desktop application for
-starting, stopping, and monitoring the local model services configured in this
-repository.
+starting, stopping, configuring, and monitoring three local `llama.cpp` model
+services.
 
 The app manages:
 
 - Qwen chat through `llama.cpp`
 - Qwen code autocomplete through `llama.cpp`
 - Nomic workspace embeddings through `llama.cpp`
-- Ollama and its configured local models
+
+![Build status: release build passing; 2 Swift test failures remain.](https://img.shields.io/badge/build-release%20passing%20%7C%202%20test%20failures-f2c94c?style=flat-square)
 
 ## Table of contents
 
@@ -32,9 +37,9 @@ The app manages:
 
 ## Screenshots
 
-The controller exposes the llama.cpp and Ollama endpoints over your chosen
-network binding. The screenshots below show the supported clients pointed at
-those endpoints while the services are running.
+The controller exposes llama.cpp endpoints over your chosen network binding.
+The screenshots below show supported clients pointed at those endpoints while
+the services are running.
 
 | Cline (chat) | Twinny (chat) |
 | --- | --- |
@@ -50,12 +55,11 @@ those endpoints while the services are running.
 - Xcode command-line tools or Xcode with Swift 6
 - Tailscale installed and connected when using the default Tailscale bind mode
 - `llama.cpp` for the three llama.cpp services
-- Ollama for the Ollama service
 
 Install runtime dependencies separately with Homebrew if needed:
 
 ```bash
-brew install llama.cpp ollama tailscale
+brew install llama.cpp tailscale
 ```
 
 Port checks use the `lsof` utility included with macOS at `/usr/sbin/lsof`;
@@ -107,7 +111,7 @@ The Services sidebar shows each runtime and its current state:
 
 - **Start** launches one service with the configuration shown on its screen.
 - **Stop** gracefully stops a service launched by the controller.
-- **Start All** validates and uses the saved configuration for the three llama.cpp services; Ollama is started separately.
+- **Start All** validates and uses the saved configuration for the three llama.cpp services.
 - **Stop All** stops all verified controller-managed services.
 - **Copy Logs**, **Clear**, and **Reveal** manage each service's local log.
 
@@ -123,17 +127,16 @@ The default ports are:
 
 | Service | Port |
 | --- | ---: |
-| Ollama | `11434` |
 | Code autocomplete | `11435` |
 | Workspace embeddings | `11436` |
 | llama.cpp chat | `11437` |
 
 Select a service to configure its port, network binding, download policy, and
-model selection directly above the Start button. Model menus combine locally
-downloaded Ollama manifests and cached Hugging Face GGUF files with launchable
+model selection directly above the Start button. Model menus combine cached
+Hugging Face GGUF files with launchable
 catalog recommendations; local, role-matched choices appear first. Use
 **Rescan** after installing a model outside the app. Expand **Advanced** to tune
-context size, GPU layers, Ollama runtime settings, or enter a custom model.
+context size, GPU layers, or enter a custom model.
 Configurations are saved
 per service between launches, and **Reset to Defaults** restores the values
 listed by the bundled launcher scripts.
@@ -172,7 +175,7 @@ disabled by default.
 ## Model recommendations
 
 Select **Recommendations** in the sidebar to view read-only suggestions from
-the Ollama library and Hugging Face GGUF listings. The controller checks at
+Hugging Face GGUF listings. The controller checks at
 most once per day and also provides a manual **Check Now** button.
 
 Only models with complete metadata, a known llama.cpp-compatible architecture,
@@ -184,21 +187,11 @@ Capability comes from signals that are actually read:
 
 - **Hugging Face** — the model's `pipeline_tag` and tags, plus any `mmproj`
   projector file in a downloaded snapshot.
-- **Ollama library** — the capability badges rendered on the library page
-  (`vision`, `audio`, `embedding`, `tools`, `thinking`, `cloud`). Badge sizes
-  such as `27b` are parameter counts, not byte sizes.
-- **Installed Ollama models** — the projector manifest layer Ollama writes for
-  vision models. This check needs no network access.
 
 Models this controller manages are text-only, so an installed multimodal model
 is reported as **Multimodal (not supported)** and is not offered in a launch
 picker. A model already saved in a configuration is still listed, so switching
 to a supported model is always possible.
-
-Ollama model names are matched with the tag normalized for comparison only:
-the library publishes `llava` while a local inventory reports `llava:latest`,
-and both resolve to the same model. Saved configuration values are never
-rewritten.
 
 Recommendations are informational only. They do not include download, install,
 or launch actions.
@@ -222,7 +215,6 @@ Tests/LocalAIControllerTests/  Unit and integration-style tests with fakes
 AppResources/                  Info.plist and application icon
 docs/                          Architecture, style, and workflow guides
 start_llama_network.sh         llama.cpp launcher
-start_ollama_network.sh        Ollama launcher
 build_app.sh                   Release build and app-bundle packaging
 check_code_line_lengths.sh     250-line authored-file quality gate
 ```
@@ -262,8 +254,7 @@ Detailed guidance lives in [`docs/`](docs/):
 - **Tailscale not connected:** Run `tailscale up`, confirm it has an IPv4
   address, and retry, or select Localhost on the service screen.
 - **Model missing:** Select **Allow downloads** on the service screen, or install
-  the model outside the controller. **Cached only** uses llama.cpp offline mode
-  and Ollama's no-pull mode.
+  the model outside the controller. **Cached only** uses llama.cpp offline mode.
 - **Port occupied:** Stop the external process or choose another port on the
   service screen.
 - **Service fails during startup:** Open that service and inspect its log for
@@ -277,6 +268,26 @@ checking dependencies, ports, memory, disk space, or Tailscale. Earlier attempts
 remain available after a retry or app relaunch.
 
 For the detailed network and editor configuration, see [how_to.md](how_to.md).
+
+## Build status
+
+Verification run on 2026-10-09:
+
+| Check | Status | Notes |
+| --- | --- | --- |
+| Authored-file line-length gate | Passing | `./check_code_line_lengths.sh` |
+| Repository validation | Needs attention | Existing trailing whitespace in `ServiceManagerPolicy.swift:27` |
+| Release app packaging | Passing | `./build_app.sh` produced and signed `dist/Local AI Controller.app` |
+| Swift build and tests | 2 failures | 154 tests executed; failures are in `MemoryMonitoringTests` and `StartupValidationTests` due to expectations that no longer match the current code. |
+
+Run the full local checks with:
+
+```bash
+./check_code_line_lengths.sh
+swift test
+./scripts/validate_repository.sh
+./build_app.sh
+```
 
 ## License
 

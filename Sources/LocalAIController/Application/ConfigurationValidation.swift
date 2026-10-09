@@ -16,15 +16,6 @@ extension ServiceManager {
             if !(0...256).contains(llama.threads) { issues.append(.init(field: "threads", message: "Threads must be between 0 and 256.")) }
             if !(0...256).contains(llama.threadsBatch) { issues.append(.init(field: "threadsBatch", message: "Batch threads must be between 0 and 256.")) }
             issues += generationIssues(llama.generation, fieldPrefix: "generation")
-        } else if let ollama = config.ollama {
-            for (field, value, label) in [("chatModel", ollama.chatModel, "Chat model"), ("autocompleteModel", ollama.autocompleteModel, "Autocomplete model"), ("embeddingModel", ollama.embeddingModel, "Embedding model"), ("kvCacheType", ollama.kvCacheType, "KV cache type")] where value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { issues.append(.init(field: field, message: "\(label) is required.")) }
-            if ollama.contextLength <= 0 || ollama.contextLength > 262_144 { issues.append(.init(field: "contextLength", message: "Context length must be between 1 and 262,144.")) }
-            if ollama.parallelRequests <= 0 || ollama.parallelRequests > 32 { issues.append(.init(field: "parallelRequests", message: "Parallel requests must be between 1 and 32.")) }
-            if ollama.maxLoadedModels <= 0 || ollama.maxLoadedModels > 3 { issues.append(.init(field: "maxLoadedModels", message: "Maximum loaded models must be between 1 and 3.")) }
-            if !Self.validCache(ollama.kvCacheType) { issues.append(.init(field: "kvCacheType", message: "KV cache type is invalid.")) }
-            if ollama.chatGeneration != .balanced || ollama.autocompleteGeneration != .autocompleteBalanced {
-                issues.append(.init(field: "generation", message: "Ollama generation tuning is request-level and is not supported by this launcher; use the provider request configuration."))
-            }
         } else { issues.append(.init(field: "runtime", message: "Runtime configuration is missing.")) }
         return issues
     }

@@ -38,10 +38,9 @@ final class ServiceManager: ObservableObject {
     var timer: Timer?
 
     let definitions: [ServiceDefinition] = [
-        .init(id: .llamaChat, name: "Qwen Chat", detail: "Qwen3.8-27B chat and reasoning", runtime: "llama.cpp", modelChoice: "chat", executable: "llama-server", estimatedBytes: 17_000_000_000, supported: true),
+        .init(id: .llamaChat, name: "Chat", detail: "Qwen3.8-27B chat and reasoning", runtime: "llama.cpp", modelChoice: "chat", executable: "llama-server", estimatedBytes: 17_000_000_000, supported: true),
         .init(id: .autocomplete, name: "Code Autocomplete", detail: "Qwen2.5-Coder-1.5B", runtime: "llama.cpp", modelChoice: "autocomplete", executable: "llama-server", estimatedBytes: 1_200_000_000, supported: true),
         .init(id: .embeddings, name: "Workspace Embeddings", detail: "Nomic Embed Text v1.5", runtime: "llama.cpp", modelChoice: "embedding", executable: "llama-server", estimatedBytes: 300_000_000, supported: true),
-        .init(id: .ollama, name: "Ollama", detail: "Installed chat, coding, and embedding models", runtime: "Ollama", modelChoice: nil, executable: "ollama", estimatedBytes: 17_000_000_000, supported: true)
     ]
 
     init(
@@ -89,8 +88,6 @@ final class ServiceManager: ObservableObject {
         for id in ServiceID.allCases {
             if let context = resolvedConfigurations[id]?.llama?.contextSize {
                 resolvedConfigurations[id]?.llama?.contextSize = ContextSizeOptions.normalized(context)
-            } else if let context = resolvedConfigurations[id]?.ollama?.contextLength {
-                resolvedConfigurations[id]?.ollama?.contextLength = ContextSizeOptions.normalized(context)
             }
         }
         configurations = resolvedConfigurations

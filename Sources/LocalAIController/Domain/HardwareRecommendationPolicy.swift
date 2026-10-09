@@ -136,21 +136,14 @@ struct HardwareRecommendationPolicy: Sendable {
     }
 
     private func identity(_ recommendation: ModelRecommendation) -> String {
-        if let repository = recommendation.repository, let filename = recommendation.filename {
-            return "llama:\(repository):\(filename)"
-        }
-        return "ollama:\(OllamaModelReference.key(recommendation.modelName ?? recommendation.name))"
+        "llama:\(recommendation.repository ?? ""):\(recommendation.filename ?? recommendation.name)"
     }
 
     private func identity(_ model: DiscoveredModel) -> String {
-        if model.runtime == .llamaCpp {
-            return "llama:\(model.repository ?? ""):\(model.filename ?? model.name)"
-        }
-        return "ollama:\(OllamaModelReference.key(model.name))"
+        "llama:\(model.repository ?? ""):\(model.filename ?? model.name)"
     }
 
     private func runtime(for recommendation: ModelRecommendation) -> ModelRuntime? {
-        if recommendation.runtime.localizedCaseInsensitiveContains("ollama") { return .ollama }
         if recommendation.runtime.localizedCaseInsensitiveContains("llama") { return .llamaCpp }
         return nil
     }

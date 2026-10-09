@@ -21,13 +21,13 @@ final class MemoryChartTimelineTests: XCTestCase {
         let timeline = MemoryChartTimeline.samples(from: samples)
 
         XCTAssertEqual(timeline.map { $0.segments.map(\.id) }, [
-            ["llamaChat", "autocomplete", "embeddings", "ollama", "other"],
-            ["llamaChat", "autocomplete", "embeddings", "ollama", "other"]
+            ["llamaChat", "autocomplete", "embeddings", "other"],
+            ["llamaChat", "autocomplete", "embeddings", "other"]
         ])
-        XCTAssertEqual(timeline[0].segments.map(\.bytes), [0, 0, 0, 0, 20])
-        XCTAssertEqual(timeline[1].segments.map(\.bytes), [8, 0, 3, 0, 13])
-        XCTAssertEqual(timeline[0].segments.map(\.isMeasured), [false, false, false, false, true])
-        XCTAssertEqual(timeline[1].segments.map(\.isMeasured), [true, false, true, false, true])
+        XCTAssertEqual(timeline[0].segments.map(\.bytes), [0, 0, 0, 20])
+        XCTAssertEqual(timeline[1].segments.map(\.bytes), [8, 0, 3, 13])
+        XCTAssertEqual(timeline[0].segments.map(\.isMeasured), [false, false, false, true])
+        XCTAssertEqual(timeline[1].segments.map(\.isMeasured), [true, false, true, true])
         XCTAssertEqual(timeline[1].segments.map(\.endBytes).last, 24)
         XCTAssertEqual(timeline.map(\.continuitySegment), [0, 0])
     }

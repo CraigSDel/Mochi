@@ -225,7 +225,6 @@ enum MemoryPresentation {
         case .llamaChat: "Chat"
         case .autocomplete: "Autocomplete"
         case .embeddings: "Embeddings"
-        case .ollama: "Ollama"
         }
     }
 }

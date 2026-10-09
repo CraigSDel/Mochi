@@ -33,7 +33,7 @@ extension ServiceManager {
     func save(_ record: ManagedProcessRecord) { processStore.save(record) }
 
     static func endpoint(_ id: ServiceID, _ port: Int, _ host: String) -> String {
-        id == .ollama ? "http://\(host):\(port)" : "http://\(host):\(port)/v1"
+        "http://\(host):\(port)/v1"
     }
 
     func persistConfigurations() { configurationStore.save(configurations) }

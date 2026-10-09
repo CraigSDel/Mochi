@@ -48,6 +48,7 @@ struct MainView: View {
             }
             Section("Workspace") {
                 Label("Overview", systemImage: "square.grid.2x2.fill").tag(SidebarDestination.overview)
+                Label("Setup guide", systemImage: "wand.and.stars").tag(SidebarDestination.setup)
                 Label("Models", systemImage: "shippingbox.fill").tag(SidebarDestination.models)
                 Label("Recommendations", systemImage: "sparkles").tag(SidebarDestination.recommendations)
             }
@@ -74,6 +75,8 @@ struct MainView: View {
         switch selection {
         case .overview:
             OverviewView(manager: manager, memoryMonitor: memoryMonitor, selection: $selection)
+        case .setup:
+            SetupGuideView(manager: manager)
         case .models:
             ModelsView(manager: manager, recommendations: recommendations, downloads: downloads)
         case .recommendations:

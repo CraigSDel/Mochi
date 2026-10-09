@@ -10,13 +10,6 @@ final class PerformanceTuningTests: XCTestCase {
         XCTAssertEqual(configuration.generation, .balanced)
     }
 
-    func testLegacyOllamaConfigurationDecodesWithGenerationDefaults() throws {
-        let json = #"{"chatModel":"chat","autocompleteModel":"code","embeddingModel":"embed","flashAttention":true,"kvCacheType":"q8_0","contextLength":16384,"parallelRequests":2,"maxLoadedModels":1}"#.data(using: .utf8)!
-        let configuration = try JSONDecoder().decode(OllamaLaunchConfiguration.self, from: json)
-        XCTAssertEqual(configuration.chatGeneration, .balanced)
-        XCTAssertEqual(configuration.autocompleteGeneration, .autocompleteBalanced)
-    }
-
     func testPresetsRestoreDeterministicLlamaBaseline() {
         let base = ServiceLaunchConfiguration.defaultValue(for: .llamaChat).llama!
         let fast = PerformancePresetMapper.llama(base, preset: .fast, baselineContext: 16_384)
@@ -24,14 +17,6 @@ final class PerformanceTuningTests: XCTestCase {
         XCTAssertEqual(fast.contextSize, 8_192)
         XCTAssertEqual(restored.contextSize, 16_384)
         XCTAssertEqual(restored.generation, .balanced)
-    }
-
-    func testQualityOllamaPresetRaisesThroughputAndContextLimits() {
-        let base = ServiceLaunchConfiguration.defaultValue(for: .ollama).ollama!
-        let quality = PerformancePresetMapper.ollama(base, preset: .quality)
-        XCTAssertEqual(quality.contextLength, 32_768)
-        XCTAssertEqual(quality.parallelRequests, 4)
-        XCTAssertEqual(quality.maxLoadedModels, 2)
     }
 
     func testAggressiveCacheReuseRaisesMemoryEstimate() {
@@ -66,12 +51,4 @@ final class PerformanceTuningValidationTests: XCTestCase {
         XCTAssertTrue(issues.contains { $0.field == "generation.topP" })
     }
 
-    func testOllamaRequestGenerationTuningIsRejectedByLauncherValidation() {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let manager = ServiceManager(probe: FakeProbe(directory: directory), defaults: UserDefaults(suiteName: UUID().uuidString)!, startTimer: false)
-        var configuration = manager.configuration(for: .ollama)
-        configuration.ollama?.chatGeneration.temperature = 0.2
-        manager.updateConfiguration(configuration, for: .ollama)
-        XCTAssertTrue(manager.validationIssues(for: .ollama).contains { $0.field == "generation" && $0.message.contains("not supported") })
-    }
 }

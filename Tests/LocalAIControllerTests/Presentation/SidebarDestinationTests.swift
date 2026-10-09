@@ -6,15 +6,41 @@ final class SidebarDestinationTests: XCTestCase {
     func testTopLevelDestinationsAreDistinctFromEveryServiceDestination() {
         let recommendations = SidebarDestination.recommendations
         let overview = SidebarDestination.overview
+        let setup = SidebarDestination.setup
         let settings = SidebarDestination.settings
         for serviceID in ServiceID.allCases {
             XCTAssertNotEqual(recommendations, .service(serviceID))
             XCTAssertNotEqual(overview, .service(serviceID))
+            XCTAssertNotEqual(setup, .service(serviceID))
             XCTAssertNotEqual(settings, .service(serviceID))
         }
         XCTAssertNotEqual(overview, recommendations)
         XCTAssertNotEqual(overview, settings)
+        XCTAssertNotEqual(overview, setup)
+        XCTAssertNotEqual(setup, recommendations)
+        XCTAssertNotEqual(setup, settings)
         XCTAssertNotEqual(recommendations, settings)
+    }
+
+    func testSetupGuideIsConnectedToTheMainNavigation() throws {
+        let sourceRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/LocalAIController")
+        let mainView = try String(contentsOf: sourceRoot.appendingPathComponent("Presentation/MainView.swift"))
+        let setupGuide = try String(contentsOf: sourceRoot.appendingPathComponent("Presentation/SetupGuideView.swift"))
+
+        XCTAssertTrue(mainView.contains("Label(\"Setup guide\""))
+        XCTAssertTrue(mainView.contains("case .setup:"))
+        XCTAssertTrue(mainView.contains("SetupGuideView(manager: manager)"))
+        XCTAssertTrue(setupGuide.contains("It does not install runtimes"))
+        XCTAssertTrue(setupGuide.contains("https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md"))
+        XCTAssertTrue(setupGuide.contains("git clone https://github.com/ggml-org/llama.cpp"))
+        XCTAssertTrue(setupGuide.contains("command -v llama-server"))
+        XCTAssertTrue(setupGuide.contains("tailscale up"))
+        XCTAssertTrue(setupGuide.contains("LAN mode exposes an unauthenticated API"))
     }
 
     func testEveryServiceHasAUniqueDestination() {
@@ -96,7 +122,6 @@ final class SidebarDestinationTests: XCTestCase {
         XCTAssertFalse(configuration.contains("DisclosureGroup(\"Custom model\""))
         XCTAssertFalse(configuration.contains("DisclosureGroup(\"Custom model names\""))
         XCTAssertTrue(configuration.contains("Text(\"Custom model\")"))
-        XCTAssertTrue(configuration.contains("Text(\"Custom model names\")"))
 
         let editor = try XCTUnwrap(serviceDetail.range(of: "ServiceConfigurationEditor("))
         let log = try XCTUnwrap(serviceDetail.range(of: "SectionHeading(\"Runtime log\""))

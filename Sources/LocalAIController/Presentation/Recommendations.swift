@@ -29,7 +29,7 @@ final class RecommendationStore: ObservableObject {
     private var timer: Timer?
 
     init(
-        providers: [any RecommendationProvider] = [CuratedLlamaCppProvider(), HuggingFaceProvider(), OllamaLibraryProvider()],
+        providers: [any RecommendationProvider] = [CuratedLlamaCppProvider(), HuggingFaceProvider()],
         searchProvider: (any ModelSearchProvider)? = nil,
         cache: any RecommendationCaching = FileRecommendationCache.standard(),
         notifier: any RecommendationNotifying = UserNotificationRecommendationNotifier(),

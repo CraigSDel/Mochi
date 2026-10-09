@@ -55,13 +55,8 @@ struct PerformanceGuidance: Identifiable, Equatable, Sendable {
             break
         }
 
-        if runtime == .ollama {
-            let cache = kvCacheType?.isEmpty == false ? kvCacheType! : "unspecified"
-            recommendations.append("Ollama KV cache: \(cache). Lower-precision KV caching can reduce memory use for long contexts when supported by the runtime.")
-        } else {
-            recommendations.append("llama.cpp context length is the main memory control exposed by this controller; lower it before increasing model size.")
-            if cacheReuse > 256 { recommendations.append("llama.cpp cache reuse is set aggressively; it can improve repeated prompts but may increase memory pressure.") }
-        }
+        recommendations.append("llama.cpp context length is the main memory control exposed by this controller; lower it before increasing model size.")
+        if cacheReuse > 256 { recommendations.append("llama.cpp cache reuse is set aggressively; it can improve repeated prompts but may increase memory pressure.") }
 
         recommendations.append("For higher throughput, consider a smaller or mixture-of-experts model; dense models read all model weights for each generated token.")
         recommendations.append("MLX/oMLX may use Apple Silicon unified memory efficiently, but this controller does not install, launch, or manage those runtimes.")
@@ -86,7 +81,7 @@ struct PerformanceGuidance: Identifiable, Equatable, Sendable {
     }
 
     private static func summary(for assessment: MemoryAssessment, runtime: ModelRuntime) -> String {
-        let runtimeName = runtime == .ollama ? "Ollama" : "llama.cpp"
+        let runtimeName = "llama.cpp"
         switch assessment.severity {
         case .safe: return "\(runtimeName) has usable memory headroom for the configured model."
         case .caution: return "\(runtimeName) is close to the conservative memory budget."
@@ -103,8 +98,7 @@ enum PerformanceGuidanceBuilder {
         recommendations: [ModelRecommendation],
         physicalMemory: UInt64,
         defaultLlamaConfiguration: LlamaLaunchConfiguration?,
-        defaultLlamaSize: Int64?,
-        defaultOllamaSize: Int64?
+        defaultLlamaSize: Int64?
     ) -> [PerformanceGuidance] {
         let llama = configurations[.llamaChat]?.llama.flatMap { configuration in
             PerformanceGuidance.make(
@@ -123,27 +117,7 @@ enum PerformanceGuidanceBuilder {
                 physicalMemory: physicalMemory
             )
         }
-        let ollama = configurations[.ollama]?.ollama.map { configuration in
-            let selection = OllamaMemoryModelSelection.resolve(
-                configuration: configuration,
-                installedModels: installedModels,
-                recommendations: recommendations,
-                isDefaultConfiguration: configurations[.ollama] == .defaultValue(for: .ollama),
-                defaultSize: defaultOllamaSize
-            )
-            return PerformanceGuidance.make(
-                runtime: .ollama,
-                modelLabel: configuration.chatModel,
-                modelBytes: selection.modelBytes,
-                quantization: nil,
-                contextSize: configuration.contextLength,
-                parallelRequests: configuration.parallelRequests,
-                loadedModelCount: selection.loadedModelCount,
-                kvCacheType: configuration.kvCacheType,
-                physicalMemory: physicalMemory
-            )
-        }
-        return [llama, ollama].compactMap { $0 }
+        return [llama].compactMap { $0 }
     }
 
     private static func llamaSize(
@@ -158,44 +132,4 @@ enum PerformanceGuidanceBuilder {
             ?? (defaultConfiguration?.repository == configuration.repository && defaultConfiguration?.filename == configuration.filename ? defaultSize : nil)
     }
 
-}
-
-struct OllamaMemoryModelSelection: Equatable, Sendable {
-    let modelBytes: [Int64]?
-    let loadedModelCount: Int
-
-    static func resolve(
-        configuration: OllamaLaunchConfiguration,
-        installedModels: [DiscoveredModel],
-        recommendations: [ModelRecommendation],
-        isDefaultConfiguration: Bool,
-        defaultSize: Int64?
-    ) -> Self {
-        let namesByKey = [configuration.chatModel, configuration.autocompleteModel, configuration.embeddingModel]
-            .reduce(into: [String: String]()) { result, name in
-                result[OllamaModelReference.key(name), default: name] = name
-            }
-        let names = Array(namesByKey.values)
-        let loadedModelCount = min(max(configuration.maxLoadedModels, 1), names.count)
-        let resolvedSizes = names.map { modelSize($0, installedModels: installedModels, recommendations: recommendations) }
-        let modelBytes: [Int64]?
-        if resolvedSizes.allSatisfy({ $0 != nil }) {
-            modelBytes = resolvedSizes.compactMap { $0 }.sorted(by: >).prefix(loadedModelCount).map { $0 }
-        } else if isDefaultConfiguration, let defaultSize {
-            modelBytes = [defaultSize]
-        } else {
-            modelBytes = nil
-        }
-        return .init(modelBytes: modelBytes, loadedModelCount: loadedModelCount)
-    }
-
-    private static func modelSize(
-        _ name: String,
-        installedModels: [DiscoveredModel],
-        recommendations: [ModelRecommendation]
-    ) -> Int64? {
-        let key = OllamaModelReference.key(name)
-        return installedModels.first { $0.runtime == .ollama && OllamaModelReference.key($0.name) == key }?.sizeBytes
-            ?? recommendations.first { $0.modelName.map { OllamaModelReference.key($0) == key } == true }?.sizeBytes
-    }
 }

@@ -4,65 +4,22 @@ import Foundation
 /// tasks by the model manager and never from an observable state path.
 struct ModelInventoryScanner {
     let fileManager: FileManager
-    let ollamaModelsURL: URL
     let huggingFaceHubURL: URL
 
     init(
         fileManager: FileManager = .default,
-        ollamaModelsURL: URL? = nil,
         huggingFaceHubURL: URL? = nil
     ) {
         self.fileManager = fileManager
         let home = fileManager.homeDirectoryForCurrentUser
         let environment = ProcessInfo.processInfo.environment
-        self.ollamaModelsURL = ollamaModelsURL
-            ?? environment["OLLAMA_MODELS"].map(URL.init(fileURLWithPath:))
-            ?? home.appendingPathComponent(".ollama/models")
         self.huggingFaceHubURL = huggingFaceHubURL
             ?? environment["HF_HOME"].map { URL(fileURLWithPath: $0).appendingPathComponent("hub") }
             ?? home.appendingPathComponent(".cache/huggingface/hub")
     }
 
     func scan() -> [DiscoveredModel] {
-        (scanOllama() + scanHuggingFace()).sorted {
-            if $0.runtime != $1.runtime { return $0.runtime.rawValue < $1.runtime.rawValue }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
-    }
-
-    private func scanOllama() -> [DiscoveredModel] {
-        let manifests = ollamaModelsURL.appendingPathComponent("manifests")
-        guard let enumerator = fileManager.enumerator(at: manifests, includingPropertiesForKeys: [.isRegularFileKey]) else { return [] }
-        var models: [DiscoveredModel] = []
-        for case let url as URL in enumerator {
-            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
-                  let data = try? Data(contentsOf: url),
-                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  object["schemaVersion"] != nil else { continue }
-            let relative = url.path.replacingOccurrences(of: manifests.path + "/", with: "")
-            let parts = relative.split(separator: "/").map(String.init)
-            guard parts.count >= 4 else { continue }
-            let namespace = parts[1]
-            let model = parts.dropFirst(2).dropLast().joined(separator: "/")
-            let tag = parts.last!
-            let name = namespace == "library" ? "\(model):\(tag)" : "\(namespace)/\(model):\(tag)"
-            let layers = object["layers"] as? [[String: Any]]
-            let size = layers?.filter { ($0["mediaType"] as? String)?.contains("image.model") == true }
-                .compactMap { ($0["size"] as? NSNumber)?.int64Value }.reduce(0, +)
-            let supportsVision = layers?.contains {
-                ($0["mediaType"] as? String) == "application/vnd.ollama.image.projector"
-            } == true
-            models.append(.init(
-                runtime: .ollama,
-                name: name,
-                repository: nil,
-                filename: nil,
-                sizeBytes: size.flatMap { $0 > 0 ? $0 : nil },
-                roleHint: ModelCapability.role(inferringFrom: name),
-                supportsVision: supportsVision
-            ))
-        }
-        return unique(models)
+        scanHuggingFace().sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private func scanHuggingFace() -> [DiscoveredModel] {

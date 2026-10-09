@@ -7,7 +7,6 @@ enum RecommendationRole: String, Codable, CaseIterable, Sendable {
 }
 enum ModelRuntime: String, Codable, Sendable {
     case llamaCpp
-    case ollama
 }
 struct DiscoveredModel: Identifiable, Hashable, Sendable {
     let runtime: ModelRuntime
@@ -16,16 +15,10 @@ struct DiscoveredModel: Identifiable, Hashable, Sendable {
     let filename: String?
     let sizeBytes: Int64?
     let roleHint: RecommendationRole
-    /// Detected from local metadata only: an Ollama projector manifest layer, or
-    /// an `mmproj-*.gguf` sibling in a Hugging Face snapshot.
+    /// Detected from local metadata: an `mmproj-*.gguf` sibling in a Hugging Face snapshot.
     let supportsVision: Bool
 
-    var id: String {
-        switch runtime {
-        case .llamaCpp: "llama:\(repository ?? ""):\(filename ?? name)"
-        case .ollama: "ollama:\(name)"
-        }
-    }
+    var id: String { "llama:\(repository ?? ""):\(filename ?? name)" }
 }
 enum ModelAvailability: String, Sendable {
     case installed = "Installed"

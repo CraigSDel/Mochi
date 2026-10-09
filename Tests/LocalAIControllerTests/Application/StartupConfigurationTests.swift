@@ -16,10 +16,6 @@ final class StartupConfigurationTests: XCTestCase {
         var downloads = cached; downloads.downloadPolicy = .allowDownloads
         XCTAssertTrue(LaunchInvocation.arguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: cached).contains("--offline"))
         XCTAssertFalse(LaunchInvocation.arguments(id: .llamaChat, script: script, modelChoice: "chat", configuration: downloads).contains("--offline"))
-        XCTAssertTrue(LaunchInvocation.arguments(id: .ollama, script: script, modelChoice: nil, configuration: .defaultValue(for: .ollama)).contains("--no-pull"))
-        var ollama = ServiceLaunchConfiguration.defaultValue(for: .ollama); ollama.port = 12001; ollama.bindMode = .localhost
-        let arguments = LaunchInvocation.arguments(id: .ollama, script: script, modelChoice: nil, configuration: ollama)
-        XCTAssertTrue(arguments.contains("12001")); XCTAssertTrue(arguments.contains("localhost"))
     }
 
     func testLaunchEnvironmentIncludesSystemAdministrationPaths() {
@@ -30,9 +26,6 @@ final class StartupConfigurationTests: XCTestCase {
         XCTAssertEqual(environment["PRESERVED"], "yes")
         XCTAssertEqual(environment["LLAMA_CHAT_REPO"], "unsloth/Qwen3.8-27B-GGUF")
         XCTAssertEqual(environment["LLAMA_CHAT_PORT"], "11437")
-        let ollama = LaunchInvocation.environment(id: .ollama, configuration: .defaultValue(for: .ollama), base: [:])
-        XCTAssertEqual(ollama["OLLAMA_CHAT_MODEL"], "qwen3.8:27b")
-        XCTAssertEqual(ollama["OLLAMA_NUM_PARALLEL"], "2")
     }
 
     func testLaunchEnvironmentContainsEveryConfiguredRuntimeValue() {
@@ -46,18 +39,6 @@ final class StartupConfigurationTests: XCTestCase {
         XCTAssertEqual(llamaEnvironment["LLAMA_AUTOCOMPLETE_CONTEXT"], "4096")
         XCTAssertEqual(llamaEnvironment["LLAMA_GPU_LAYERS"], "42")
 
-        var ollama = ServiceLaunchConfiguration.defaultValue(for: .ollama)
-        ollama.port = 12003; ollama.ollama = .init(chatModel: "chat:x", autocompleteModel: "code:x", embeddingModel: "embed:x", flashAttention: false, kvCacheType: "f16", contextLength: 2048, parallelRequests: 3, maxLoadedModels: 2)
-        let ollamaEnvironment = LaunchInvocation.environment(id: .ollama, configuration: ollama, base: [:])
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_PORT"], "12003")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_CHAT_MODEL"], "chat:x")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_AUTOCOMPLETE_MODEL"], "code:x")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_EMBEDDING_MODEL"], "embed:x")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_FLASH_ATTENTION"], "0")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_KV_CACHE_TYPE"], "f16")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_CONTEXT_LENGTH"], "2048")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_NUM_PARALLEL"], "3")
-        XCTAssertEqual(ollamaEnvironment["OLLAMA_MAX_LOADED_MODELS"], "2")
     }
 
     func testEffectiveBindModeOnlyOverridesTailscaleWithLocalhost() {
@@ -72,7 +53,6 @@ final class StartupConfigurationTests: XCTestCase {
     func testEndpointIncludesHostPortAndRuntimePath() {
         XCTAssertEqual(ServiceManager.endpoint(.llamaChat, 11437, "100.64.0.1"), "http://100.64.0.1:11437/v1")
         XCTAssertEqual(ServiceManager.endpoint(.autocomplete, 11435, "127.0.0.1"), "http://127.0.0.1:11435/v1")
-        XCTAssertEqual(ServiceManager.endpoint(.ollama, 11434, "192.168.1.10"), "http://192.168.1.10:11434")
     }
 
     func testLegacyManagedProcessRecordDecodesWithDefaultableBindMode() throws {
@@ -127,28 +107,10 @@ final class StartupConfigurationTests: XCTestCase {
 
     func testStartAllIncludesOnlyLlamaServices() {
         XCTAssertEqual(ServiceManager.startAllServiceIDs, [.llamaChat, .autocomplete, .embeddings])
-        XCTAssertFalse(ServiceManager.startAllServiceIDs.contains(.ollama))
     }
 
-    func testStartAllValidationIgnoresInvalidOllamaConfiguration() {
+    func testStartAllPortCollisionsAreDetected() {
         let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
-        var ollama = manager.configuration(for: .ollama)
-        ollama.port = 80
-        ollama.ollama?.chatModel = ""
-        manager.updateConfiguration(ollama, for: .ollama)
-
-        XCTAssertFalse(manager.validationIssues(for: .ollama).isEmpty)
-        XCTAssertTrue(manager.validationIssuesForStartAll().isEmpty)
-    }
-
-    func testStartAllPortCollisionsIgnoreOllama() {
-        let (_, probe, defaults) = context(); let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
-        var ollama = manager.configuration(for: .ollama)
-        ollama.port = manager.configuration(for: .llamaChat).port
-        manager.updateConfiguration(ollama, for: .ollama)
-
-        XCTAssertFalse(manager.validationIssuesForStartAll().contains { $0.field == "ports" })
-
         var embeddings = manager.configuration(for: .embeddings)
         embeddings.port = manager.configuration(for: .autocomplete).port
         manager.updateConfiguration(embeddings, for: .embeddings)

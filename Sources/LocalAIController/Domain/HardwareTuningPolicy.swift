@@ -26,15 +26,6 @@ enum HardwareTuningPolicy {
                 if let suggestion = llamaSuggestion(serviceID: serviceID, configuration: llama, tier: tier, installedModels: installedModels, recommendations: recommendations) {
                     suggestions.append(suggestion)
                 }
-            } else if var ollama = updated.ollama {
-                ollama = PerformancePresetMapper.ollama(ollama, preset: preset)
-                ollama.contextLength = safeContext(for: serviceID, tier: tier, requested: ollama.contextLength)
-                ollama.parallelRequests = min(ollama.parallelRequests, parallelRequests(for: tier))
-                ollama.maxLoadedModels = min(ollama.maxLoadedModels, maxLoadedModels(for: tier))
-                updated.ollama = ollama
-                if let suggestion = ollamaSuggestion(serviceID: serviceID, configuration: ollama, tier: tier, installedModels: installedModels, recommendations: recommendations) {
-                    suggestions.append(suggestion)
-                }
             }
             if updated != configuration { tuned[serviceID] = updated }
         }
@@ -60,15 +51,13 @@ enum HardwareTuningPolicy {
         switch tier {
         case 8: limit = 4_096
         case 16: limit = 8_192
-        case 32: limit = serviceID == .llamaChat || serviceID == .ollama ? 16_384 : 8_192
-        default: limit = serviceID == .llamaChat || serviceID == .ollama ? 32_768 : 16_384
+        case 32: limit = serviceID == .llamaChat ? 16_384 : 8_192
+        default: limit = serviceID == .llamaChat ? 32_768 : 16_384
         }
         return ContextSizeOptions.normalized(min(max(requested, 4_096), limit))
     }
 
     private static func batchSize(for tier: Int) -> Int { tier <= 8 ? 128 : tier <= 16 ? 256 : 512 }
-    private static func parallelRequests(for tier: Int) -> Int { tier <= 16 ? 1 : 2 }
-    private static func maxLoadedModels(for tier: Int) -> Int { tier <= 32 ? 1 : 2 }
     private static func memoryLabel(_ tier: Int) -> String { tier == 64 ? "64 GB or more" : "up to " + String(tier) + " GB" }
 
     private static func llamaSuggestion(
@@ -87,25 +76,7 @@ enum HardwareTuningPolicy {
         return .init(id: serviceID.rawValue + ":" + candidate.id, serviceID: serviceID, currentModel: configuration.alias, suggestedModel: candidate.name, reason: "The selected model exceeds the conservative memory budget for this Mac.")
     }
 
-    private static func ollamaSuggestion(
-        serviceID: ServiceID,
-        configuration: OllamaLaunchConfiguration,
-        tier: Int,
-        installedModels: [DiscoveredModel],
-        recommendations: [ModelRecommendation]
-    ) -> HardwareModelSuggestion? {
-        let current = configuration.chatModel
-        let key = OllamaModelReference.key(current)
-        let currentSize = installedModels.first { $0.runtime == .ollama && OllamaModelReference.key($0.name) == key }?.sizeBytes
-            ?? recommendations.first { $0.modelName.map { OllamaModelReference.key($0) == key } == true }?.sizeBytes
-        guard let currentSize else { return nil }
-        let assessment = ControllerPolicy.memoryAssessment(modelBytes: [currentSize], contextSize: safeContext(for: serviceID, tier: tier, requested: configuration.contextLength), parallelRequests: parallelRequests(for: tier), physicalMemory: UInt64(tier) * 1_073_741_824)
-        guard assessment.severity == .high else { return nil }
-        guard let candidate = recommendations.filter({ $0.role == .chat && $0.runtime.lowercased().contains("ollama") && ($0.sizeBytes ?? Int64.max) < currentSize && $0.compatibility != .incompatible }).min(by: { ($0.sizeBytes ?? Int64.max) < ($1.sizeBytes ?? Int64.max) }) else { return nil }
-        return .init(id: serviceID.rawValue + ":" + candidate.id, serviceID: serviceID, currentModel: current, suggestedModel: candidate.modelName ?? candidate.name, reason: "The selected model exceeds the conservative memory budget for this Mac.")
-    }
-
     private static func role(for serviceID: ServiceID) -> RecommendationRole {
-        switch serviceID { case .autocomplete: .coding; case .embeddings: .embedding; case .llamaChat, .ollama: .chat }
+        switch serviceID { case .autocomplete: .coding; case .embeddings: .embedding; case .llamaChat: .chat }
     }
 }

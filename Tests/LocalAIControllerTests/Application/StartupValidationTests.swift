@@ -16,18 +16,10 @@ final class StartupValidationTests: XCTestCase {
         await manager.start(.llamaChat)
         let service = manager.services.first { $0.id == .llamaChat }
         XCTAssertEqual(service?.state, .failed)
-        XCTAssertEqual(manager.presentedFailure?.guidance, "Run: brew install llama.cpp")
+        XCTAssertEqual(manager.presentedFailure?.guidance, "Install llama.cpp and make sure llama-server is available on PATH.")
         let log = try String(contentsOf: directory.appendingPathComponent("llamaChat.log"), encoding: .utf8)
         XCTAssertTrue(log.contains("llama-server is not installed"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: manager.logURL(.llamaChat).path))
-    }
-
-    func testMissingOllamaHasInstallationGuidance() async {
-        let (_, probe, defaults) = context(); probe.commands["ollama"] = nil
-        let manager = ServiceManager(probe: probe, defaults: defaults, startTimer: false)
-        await manager.start(.ollama)
-        XCTAssertEqual(manager.presentedFailure?.guidance, "Run: brew install ollama")
-        XCTAssertTrue(manager.services.first { $0.id == .ollama }?.logText.contains("ollama is not installed") == true)
     }
 
     func testDisconnectedTailscaleIsLogged() async {

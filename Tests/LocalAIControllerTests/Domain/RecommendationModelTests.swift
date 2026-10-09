@@ -54,30 +54,6 @@ final class RecommendationModelTests: XCTestCase {
         XCTAssertEqual(ModelCapability.role(inferringFrom: "mistral"), .chat)
     }
 
-    func testOllamaLibraryProviderGatesOnCapabilityBadges() async throws {
-        let html = """
-        <ul>
-        <li><a href="/library/llava"><span class="rounded-md bg-indigo-50">vision</span></a></li>
-        <li><a href="/library/cloudonly"><span class="rounded-md bg-cyan-50">cloud</span></a></li>
-        <li><a href="/library/nomic-embed-text"><span class="rounded-md bg-indigo-50">embedding</span></a></li>
-        <li><a href="/library/qwen3"><span class="rounded-md bg-indigo-50">tools</span><span class="rounded-md bg-indigo-50">thinking</span></a></li>
-        </ul>
-        """
-        let fetcher = StubFetcher()
-        fetcher.stub(pathSuffix: "/library", data: Data(html.utf8))
-
-        let recommendations = try await OllamaLibraryProvider(fetcher: fetcher).fetch()
-
-        XCTAssertEqual(recommendations.map(\.name), ["llava", "cloudonly", "nomic-embed-text", "qwen3"])
-        XCTAssertEqual(recommendations.map(\.compatibility), [.incompatible, .incompatible, .unverified, .unverified])
-        // The catalog publishes tagless names; selection normalizes the tag.
-        XCTAssertEqual(recommendations.map(\.modelName), ["llava", "cloudonly", "nomic-embed-text", "qwen3"])
-        XCTAssertEqual(recommendations.map(\.role), [.chat, .chat, .embedding, .chat])
-        XCTAssertTrue(recommendations.allSatisfy { $0.sizeBytes == nil })
-        XCTAssertTrue(recommendations[3].rationale.contains("thinking, tools"))
-        XCTAssertTrue(recommendations.allSatisfy { ModelOptionBuilder.options(runtime: .ollama, role: .chat, installed: [], recommendations: [$0]).isEmpty == ($0.compatibility == .incompatible) })
-    }
-
     func testLegacyCacheDecodesWithoutLaunchMetadata() throws {
         let json = #"{"id":"old","name":"Old","source":"Fixture","runtime":"llama.cpp","role":"Chat / reasoning","quantization":"Q4_K_M","sizeBytes":1000,"context":"test","license":"test","compatibility":"Compatible","rationale":"test","updatedAt":null}"#.data(using: .utf8)!
         let model = try JSONDecoder().decode(ModelRecommendation.self, from: json)
@@ -121,6 +97,6 @@ final class RecommendationModelTests: XCTestCase {
     }
 
     private func recommendation(id: String, role: RecommendationRole, compatibility: Compatibility) -> ModelRecommendation {
-        ModelRecommendation(id: id, name: id, source: "Fixture", runtime: "Ollama", role: role, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: compatibility, rationale: "test", updatedAt: nil, modelName: "\(id):latest")
+        ModelRecommendation(id: id, name: id, source: "Fixture", runtime: "llama.cpp", role: role, quantization: "Q4", sizeBytes: 1, context: "test", license: "test", compatibility: compatibility, rationale: "test", updatedAt: nil, repository: "owner/\(id)", filename: "\(id).gguf")
     }
 }

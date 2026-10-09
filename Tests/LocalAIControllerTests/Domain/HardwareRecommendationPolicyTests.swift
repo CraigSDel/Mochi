@@ -22,19 +22,6 @@ final class HardwareRecommendationPolicyTests: XCTestCase {
         XCTAssertTrue(result.recommendations.isEmpty)
     }
 
-    func test_installedModel_deduplicatesCatalogAndPreservesInstalledStatus() {
-        let catalogModel = recommendation(id: "installed", role: .coding, size: 2_000_000_000, runtime: "Ollama", modelName: "qwen2.5-coder:latest")
-        let installed = DiscoveredModel(runtime: .ollama, name: "qwen2.5-coder", repository: nil, filename: nil,
-                                        sizeBytes: 2_100_000_000, roleHint: .coding, supportsVision: false)
-
-        let result = policy.evaluate(profile: profile(), catalogRecommendations: [catalogModel], installedModels: [installed])
-        let matches = result.recommendations.filter { $0.role == .coding }
-
-        XCTAssertEqual(matches.count, 1)
-        XCTAssertTrue(matches[0].isInstalled)
-        XCTAssertEqual(matches[0].catalogRecommendation?.id, "installed")
-    }
-
     func test_safeModels_rankBeforeCautionAndResultsAreDeterministic() {
         let safe = recommendation(id: "safe", role: .chat, size: 8_000_000_000)
         let caution = recommendation(id: "caution", role: .chat, size: 20_000_000_000)
@@ -74,10 +61,9 @@ final class HardwareRecommendationPolicyTests: XCTestCase {
         ]
     }
 
-    private func recommendation(id: String, role: RecommendationRole, size: Int64?, runtime: String = "llama.cpp", modelName: String? = nil) -> ModelRecommendation {
-        .init(id: id, name: id, source: "Fixture", runtime: runtime, role: role, quantization: "Q4", sizeBytes: size,
+    private func recommendation(id: String, role: RecommendationRole, size: Int64?) -> ModelRecommendation {
+        .init(id: id, name: id, source: "Fixture", runtime: "llama.cpp", role: role, quantization: "Q4", sizeBytes: size,
               context: "verified", license: "test", compatibility: .compatible, rationale: "test", updatedAt: nil,
-              repository: runtime == "llama.cpp" ? "owner/\(id)" : nil,
-              filename: runtime == "llama.cpp" ? "\(id).gguf" : nil, modelName: modelName ?? (runtime == "Ollama" ? id : nil))
+              repository: "owner/\(id)", filename: "\(id).gguf")
     }
 }

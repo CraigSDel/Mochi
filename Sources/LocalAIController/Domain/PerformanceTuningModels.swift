@@ -57,21 +57,4 @@ enum PerformancePresetMapper {
         return result
     }
 
-    static func ollama(_ base: OllamaLaunchConfiguration, preset: PerformancePreset) -> OllamaLaunchConfiguration {
-        var result = base
-        switch preset {
-        case .fast:
-            result.contextLength = 8_192; result.parallelRequests = 1; result.maxLoadedModels = 1
-            result.chatGeneration = .init(maximumOutputTokens: 512, temperature: 0.7, topK: 32, topP: 0.9, repeatPenalty: 1.1, autocompleteOutputLimit: 128)
-            result.autocompleteGeneration = .autocompleteBalanced
-        case .balanced:
-            result.contextLength = 16_384; result.flashAttention = true; result.parallelRequests = 2; result.maxLoadedModels = 1
-            result.chatGeneration = .balanced; result.autocompleteGeneration = .autocompleteBalanced
-        case .quality:
-            result.contextLength = 32_768; result.parallelRequests = 4; result.maxLoadedModels = 2
-            result.chatGeneration = .init(maximumOutputTokens: 2_048, temperature: 0.7, topK: 80, topP: 0.95, repeatPenalty: 1.05, autocompleteOutputLimit: 512)
-            result.autocompleteGeneration = .init(maximumOutputTokens: 512, temperature: 0.2, topK: 40, topP: 0.95, repeatPenalty: 1.05, autocompleteOutputLimit: 256)
-        }
-        return result
-    }
 }

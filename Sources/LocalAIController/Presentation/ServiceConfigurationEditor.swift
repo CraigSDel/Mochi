@@ -41,14 +41,13 @@ struct ServiceConfigurationEditor: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    SectionHeading("Model", subtitle: configuration.llama != nil ? "Choose a cached or recommended Hugging Face GGUF." : "Assign installed or catalog Ollama models by role.", symbol: "shippingbox")
+                    SectionHeading("Model", subtitle: "Choose a cached or recommended Hugging Face GGUF.", symbol: "shippingbox")
                     Spacer()
                     CatalogVisibilityPicker(includeCatalog: $includeCatalog)
                     Button { Task { await manager.refreshModelInventory() } } label: { Label("Rescan", systemImage: "arrow.clockwise") }
                         .buttonStyle(AppleSecondaryButtonStyle()).help("Rescan downloaded models")
                 }
-                if configuration.llama != nil { llamaFields } else if configuration.ollama != nil { ollamaFields }
-                contextLengthControl
+                llamaFields
             }
             .disabled(locked)
             .appCard()
@@ -57,7 +56,7 @@ struct ServiceConfigurationEditor: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 DisclosureGroup("Advanced", isExpanded: $advanced) {
-                    if configuration.llama != nil { llamaAdvanced } else if configuration.ollama != nil { ollamaAdvanced }
+                    llamaAdvanced
                 }
                 .font(.headline)
                 .disabled(locked)
@@ -105,39 +104,8 @@ struct ServiceConfigurationEditor: View {
             }
         }.padding(.top, 8)
     }
-    private var ollamaFields: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ollamaSelector("Chat", role: .chat, keyPath: \.chatModel)
-            ollamaSelector("Autocomplete", role: .coding, keyPath: \.autocompleteModel)
-            ollamaSelector("Embeddings", role: .embedding, keyPath: \.embeddingModel)
-        }
-    }
-    private var ollamaAdvanced: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle("Flash attention", isOn: ollamaBinding(\.flashAttention))
-            ConfigurationField("KV cache type") {
-                TextField("KV cache type", text: ollamaBinding(\.kvCacheType))
-                    .textFieldStyle(.plain)
-                    .appInputSurface()
-            }
-            HStack(alignment: .top, spacing: 12) {
-                ConfigurationField("Parallel requests") {
-                    styledNumberField("Parallel requests", value: ollamaBinding(\.parallelRequests))
-                }
-                ConfigurationField("Max loaded models") {
-                    styledNumberField("Max loaded models", value: ollamaBinding(\.maxLoadedModels))
-                }
-            }
-            Text("Custom model names").font(.subheadline.weight(.semibold))
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Chat model", text: ollamaBinding(\.chatModel))
-                TextField("Autocomplete model", text: ollamaBinding(\.autocompleteModel))
-                TextField("Embedding model", text: ollamaBinding(\.embeddingModel))
-            }
-        }.padding(.top, 8)
-    }
     private var modelRole: RecommendationRole {
-        switch serviceID { case .autocomplete: .coding; case .embeddings: .embedding; case .llamaChat, .ollama: .chat }
+        switch serviceID { case .autocomplete: .coding; case .embeddings: .embedding; case .llamaChat: .chat }
     }
     private var llamaOptions: [ModelOption] {
         ModelOptionBuilder.options(runtime: .llamaCpp, role: modelRole, installed: manager.installedModels, recommendations: recommendations.recommendations, currentLlama: configuration.llama, includeCatalog: includeCatalog)
@@ -147,43 +115,11 @@ struct ServiceConfigurationEditor: View {
         let key = "\(llama.repository)|\(llama.filename)"
         return llamaOptions.first { ModelOptionBuilder.selectionKey($0) == key }?.id ?? ""
     }
-    @ViewBuilder
-    private func ollamaSelector(_ title: String, role: RecommendationRole, keyPath: WritableKeyPath<OllamaLaunchConfiguration, String>) -> some View {
-        let current = configuration.ollama![keyPath: keyPath]
-        let options = ModelOptionBuilder.options(runtime: .ollama, role: role, installed: manager.installedModels, recommendations: recommendations.recommendations, currentOllamaName: current, includeCatalog: includeCatalog)
-        let selection = options.first { ModelOptionBuilder.selectionKey($0) == OllamaModelReference.key(current) }?.id ?? ""
-        DownloadableModelSelector(title: title, options: options, selection: selection, recommendations: recommendations.recommendations, manager: manager, onSelect: { option in
-            var copy = configuration
-            copy.ollama![keyPath: keyPath] = option.name
-            manager.updateConfiguration(copy, for: serviceID)
-        }, onManageDownloads: openModels)
-    }
-    @ViewBuilder
-    private var contextLengthControl: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if configuration.ollama != nil {
-                ConfigurationField("Ollama server context") {
-                    ContextSizeSlider(value: ollamaBinding(\.contextLength), assessment: manager.memoryAssessment(for: serviceID))
-                }
-                Text("This setting applies to the shared Ollama server. Model generation settings are configured below.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .padding(.top, 4)
-    }
     private func commonBinding<Value>(_ keyPath: WritableKeyPath<ServiceLaunchConfiguration, Value>) -> Binding<Value> {
         Binding(get: { configuration[keyPath: keyPath] }, set: { value in var copy = configuration; copy[keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
     }
     private func llamaBinding<Value>(_ keyPath: WritableKeyPath<LlamaLaunchConfiguration, Value>) -> Binding<Value> {
         Binding(get: { configuration.llama![keyPath: keyPath] }, set: { value in var copy = configuration; copy.llama![keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
-    }
-    private func ollamaBinding<Value>(_ keyPath: WritableKeyPath<OllamaLaunchConfiguration, Value>) -> Binding<Value> {
-        Binding(get: { configuration.ollama![keyPath: keyPath] }, set: { value in var copy = configuration; copy.ollama![keyPath: keyPath] = value; manager.updateConfiguration(copy, for: serviceID) })
-    }
-    private func styledNumberField(_ title: String, value: Binding<Int>) -> some View {
-        TextField(title, value: value, format: .number)
-            .textFieldStyle(.plain)
-            .appInputSurface()
     }
 }
 

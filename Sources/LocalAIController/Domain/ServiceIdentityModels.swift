@@ -1,12 +1,12 @@
 import Foundation
 
 enum ServiceID: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
-    case llamaChat, autocomplete, embeddings, ollama
+    case llamaChat, autocomplete, embeddings
     var id: String { rawValue }
 }
 
 enum SidebarDestination: Hashable {
-    case overview, models, recommendations, settings, service(ServiceID)
+    case overview, setup, models, recommendations, settings, service(ServiceID)
     static let initial: SidebarDestination = .overview
 }
 
@@ -60,7 +60,6 @@ extension ServiceID {
         case .llamaChat: "bubble.left.and.bubble.right.fill"
         case .autocomplete: "chevron.left.forwardslash.chevron.right"
         case .embeddings: "point.3.connected.trianglepath.dotted"
-        case .ollama: "shippingbox.fill"
         }
     }
 }

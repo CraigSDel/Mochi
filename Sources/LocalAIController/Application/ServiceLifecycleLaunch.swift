@@ -12,7 +12,7 @@ extension ServiceManager {
     }
 
     func stopAll() async {
-        for id in [ServiceID.llamaChat, .autocomplete, .embeddings, .ollama] { await stop(id) }
+        for id in ServiceID.allCases { await stop(id) }
     }
 
     func start(
@@ -58,7 +58,7 @@ extension ServiceManager {
             return false
         }
         guard let executable = await probe.commandPath(definition.executable ?? "") else {
-            markLaunchFailure(at: index, message: "\(definition.executable ?? definition.runtime) is not installed.", guidance: "Run: brew install \(id == .ollama ? "ollama" : "llama.cpp")")
+            markLaunchFailure(at: index, message: "\(definition.executable ?? definition.runtime) is not installed.", guidance: "Install llama.cpp and make sure llama-server is available on PATH.")
             return false
         }
         appendLaunchLog(id, "Runtime executable: \(executable)")
@@ -87,7 +87,7 @@ extension ServiceManager {
             markLaunchFailure(at: index, message: "Less than 5 GB of free disk space is available.", guidance: "Free disk space, then retry.")
             return false
         }
-        let scriptName = id == .ollama ? "start_ollama_network.sh" : "start_llama_network.sh"
+        let scriptName = "start_llama_network.sh"
         guard let script = await probe.scriptURL(named: scriptName) else {
             markLaunchFailure(at: index, message: "Could not locate \(scriptName).", guidance: "Rebuild the app so launcher resources are bundled.")
             return false

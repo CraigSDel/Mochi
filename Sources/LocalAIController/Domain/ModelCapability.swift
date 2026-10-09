@@ -14,7 +14,7 @@ enum ModelCapability {
         "llava", "idefics", "internvl", "moondream"
     ]
 
-    /// Capability badges rendered by the Ollama library page.
+    /// Capability badges reported by a model catalog.
     static let capabilityBadges: Set<String> = ["vision", "audio", "embedding", "tools", "thinking", "cloud"]
 
     static func role(inferringFrom value: String) -> RecommendationRole {
@@ -37,7 +37,7 @@ enum ModelCapability {
         }
     }
 
-    /// Multimodal detection from Ollama library badges.
+    /// Multimodal detection from catalog capability badges.
     ///
     /// `cloud` is handled separately by `isCloudOnly(badges:)`: a cloud-only
     /// model is rejected for a different reason than a local projector.

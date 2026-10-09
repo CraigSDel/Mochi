@@ -69,7 +69,7 @@ private struct HardwareRecommendationRow: View {
                     Spacer()
                     Text(model.fit.rawValue).font(.caption).foregroundStyle(model.fit == .safe ? .green : .orange)
                 }
-                Text("\(model.sizeText) · \(model.runtime == .ollama ? "Ollama" : "llama.cpp") · \(model.reason)")
+                Text("\(model.sizeText) · llama.cpp · \(model.reason)")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             if let catalogModel, !model.isInstalled {
@@ -80,5 +80,5 @@ private struct HardwareRecommendationRow: View {
         .padding(.vertical, 4)
     }
 
-    private var displayName: String { catalogModel?.name ?? model.modelID.replacingOccurrences(of: "ollama:", with: "") }
+    private var displayName: String { catalogModel?.name ?? model.modelID.replacingOccurrences(of: "llama:", with: "") }
 }

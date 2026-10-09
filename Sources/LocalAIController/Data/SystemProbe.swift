@@ -108,8 +108,7 @@ final class LiveSystemProbe: SystemProbing, @unchecked Sendable {
     }
     func processCommand(_ pid: Int32) async -> String { await run("/bin/ps", ["-p", String(pid), "-o", "command="]) ?? "" }
     func healthResponding(_ id: ServiceID, port: Int, host: String) async -> Bool {
-        let path = id == .ollama ? "/api/tags" : "/health"
-        guard let url = URL(string: "http://\(host):\(port)\(path)") else { return false }
+        guard let url = URL(string: "http://\(host):\(port)/health") else { return false }
         var request = URLRequest(url: url); request.timeoutInterval = 1
         do { let (_, response) = try await URLSession.shared.data(for: request); return (200..<500).contains((response as? HTTPURLResponse)?.statusCode ?? 0) } catch { return false }
     }

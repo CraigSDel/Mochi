@@ -13,23 +13,7 @@ extension ServiceManager {
                 physicalMemory: probe.physicalMemory
             )
         }
-        guard let ollama = config.ollama else {
-            return ControllerPolicy.memoryAssessment(modelBytes: nil, contextSize: 0, physicalMemory: probe.physicalMemory)
-        }
-        let selection = OllamaMemoryModelSelection.resolve(
-            configuration: ollama,
-            installedModels: installedModels,
-            recommendations: recommendationMetadata,
-            isDefaultConfiguration: config == .defaultValue(for: .ollama),
-            defaultSize: definition(for: id)?.estimatedBytes
-        )
-        return ControllerPolicy.memoryAssessment(
-            modelBytes: selection.modelBytes,
-            contextSize: ollama.contextLength,
-            parallelRequests: ollama.parallelRequests,
-            loadedModelCount: selection.loadedModelCount,
-            physicalMemory: probe.physicalMemory
-        )
+        return ControllerPolicy.memoryAssessment(modelBytes: nil, contextSize: 0, physicalMemory: probe.physicalMemory)
     }
 
     func performanceGuidance() -> [PerformanceGuidance] {
@@ -40,7 +24,6 @@ extension ServiceManager {
             physicalMemory: probe.physicalMemory,
             defaultLlamaConfiguration: ServiceLaunchConfiguration.defaultValue(for: .llamaChat).llama,
             defaultLlamaSize: definition(for: .llamaChat)?.estimatedBytes,
-            defaultOllamaSize: definition(for: .ollama)?.estimatedBytes
         )
     }
 
@@ -67,9 +50,7 @@ extension ServiceManager {
             let installed = installedModels.contains { $0.runtime == .llamaCpp && $0.repository == llama.repository && $0.filename == llama.filename }
             return installed ? [] : [llama.alias]
         }
-        guard let ollama = configuration.ollama else { return [] }
-        let installedKeys = Set(installedModels.filter { $0.runtime == .ollama }.map { OllamaModelReference.key($0.name) })
-        return [ollama.chatModel, ollama.autocompleteModel, ollama.embeddingModel].filter { !installedKeys.contains(OllamaModelReference.key($0)) }
+        return []
     }
 
     func validationIssuesForStartAll() -> [ConfigurationIssue] {

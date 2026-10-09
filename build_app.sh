@@ -18,7 +18,7 @@ swift build --disable-sandbox -c release -debug-info-format none --package-path 
 rm -rf "$APP_DIR"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
 cp "$BUILD_DIR/release/LocalAIController" "$CONTENTS/MacOS/LocalAIController"
-cp "$ROOT/start_llama_network.sh" "$ROOT/start_ollama_network.sh" "$CONTENTS/Resources/"
+cp "$ROOT/start_llama_network.sh" "$CONTENTS/Resources/"
 cp "$ROOT/AppResources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 cp "$ROOT/AppResources/Info.plist" "$CONTENTS/Info.plist"
 chmod +x "$CONTENTS/MacOS/LocalAIController" "$CONTENTS/Resources/"*.sh

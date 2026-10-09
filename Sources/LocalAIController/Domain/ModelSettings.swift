@@ -39,26 +39,15 @@ struct LlamaModelSettings: Codable, Equatable, Sendable {
     }
 }
 
-struct OllamaModelSettings: Codable, Equatable, Sendable {
-    var generation: GenerationProfile
-
-    static func defaults(for role: RecommendationRole) -> Self {
-        .init(generation: role == .coding ? .autocompleteBalanced : .balanced)
-    }
-}
-
 struct ModelSettingsProfile: Codable, Equatable, Sendable {
     let runtime: ModelRuntime
     let role: RecommendationRole
     var llama: LlamaModelSettings?
-    var ollama: OllamaModelSettings?
 
     static func defaults(runtime: ModelRuntime, role: RecommendationRole) -> Self {
         switch runtime {
         case .llamaCpp:
-            return .init(runtime: runtime, role: role, llama: .defaults(for: role), ollama: nil)
-        case .ollama:
-            return .init(runtime: runtime, role: role, llama: nil, ollama: .defaults(for: role))
+            return .init(runtime: runtime, role: role, llama: .defaults(for: role))
         }
     }
 }

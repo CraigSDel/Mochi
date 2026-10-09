@@ -74,9 +74,7 @@ final class ModelDownloadCoordinator: ObservableObject {
         guard active == nil, task == nil, let recommendation = queued.first, let manager else { return }
         queued.removeFirst()
         persistQueue()
-        let expected = recommendation.runtime.caseInsensitiveCompare("Ollama") == .orderedSame
-            ? nil : recommendation.sizeBytes
-        active = (recommendation, .init(completedBytes: 0, expectedBytes: expected))
+        active = (recommendation, .init(completedBytes: 0, expectedBytes: recommendation.sizeBytes))
         task = Task { [weak self, weak manager] in
             do {
                 guard let manager else { return }

@@ -9,11 +9,11 @@ final class MemoryMonitoringTests: XCTestCase {
         let probe = FakeMemoryProbe(systemUsed: 12, systemTotal: 32, footprints: [10: 4, 20: 7])
         let monitor = MemoryMonitor(probe: probe, maximumSampleCount: 10)
 
-        await monitor.capture(at: Date(timeIntervalSince1970: 1), serviceRoots: ownedRoots([.llamaChat: 10, .ollama: 20]))
+        await monitor.capture(at: Date(timeIntervalSince1970: 1), serviceRoots: ownedRoots([.llamaChat: 10, .autocomplete: 20]))
 
         XCTAssertEqual(monitor.currentSample?.systemUsedBytes, 12)
         XCTAssertEqual(monitor.currentSample?.systemTotalBytes, 32)
-        XCTAssertEqual(monitor.currentSample?.serviceBytes, [.llamaChat: 4, .ollama: 7])
+        XCTAssertEqual(monitor.currentSample?.serviceBytes, [.llamaChat: 4, .autocomplete: 7])
         XCTAssertEqual(monitor.currentSample?.managedBytes, 11)
         XCTAssertEqual(monitor.currentSample?.otherSystemUsageBytes, 1)
     }
@@ -82,26 +82,25 @@ final class MemoryMonitoringTests: XCTestCase {
     func testUnavailableAndRestartedServicesDoNotLeaveStaleValues() async {
         let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2, footprints: [10: 5])
         let monitor = MemoryMonitor(probe: probe)
-        await monitor.capture(serviceRoots: ownedRoots([.ollama: 10]))
+        await monitor.capture(serviceRoots: ownedRoots([.autocomplete: 10]))
 
         probe.footprints = [:]
-        await monitor.capture(serviceRoots: ownedRoots([.ollama: 10]))
-        XCTAssertNil(monitor.currentSample?.serviceBytes[.ollama])
+        await monitor.capture(serviceRoots: ownedRoots([.autocomplete: 10]))
+        XCTAssertNil(monitor.currentSample?.serviceBytes[.autocomplete])
 
         probe.footprints = [30: 9]
-        await monitor.capture(serviceRoots: ownedRoots([.ollama: 30]))
-        XCTAssertEqual(monitor.currentSample?.serviceBytes[.ollama], 9)
+        await monitor.capture(serviceRoots: ownedRoots([.autocomplete: 30]))
+        XCTAssertEqual(monitor.currentSample?.serviceBytes[.autocomplete], 9)
     }
 
     func testNoOwnedPIDUnavailableFootprintAndMeasuredZeroStayDistinct() async {
         let probe = FakeMemoryProbe(systemUsed: 1, systemTotal: 2, footprints: [10: 0])
         let monitor = MemoryMonitor(probe: probe)
 
-        await monitor.capture(at: Date(timeIntervalSince1970: 1), serviceRoots: ownedRoots([.llamaChat: 10, .ollama: 20]))
+        await monitor.capture(at: Date(timeIntervalSince1970: 1), serviceRoots: ownedRoots([.llamaChat: 10, .autocomplete: 20]))
 
         XCTAssertEqual(monitor.currentSample?.serviceReadings[.llamaChat], .measured(bytes: 0))
-        XCTAssertEqual(monitor.currentSample?.serviceReadings[.ollama], .footprintUnavailable(pid: 20))
-        XCTAssertEqual(monitor.currentSample?.serviceReadings[.autocomplete], .noOwnedPID(reason: "No validated owned PID"))
+        XCTAssertEqual(monitor.currentSample?.serviceReadings[.autocomplete], .footprintUnavailable(pid: 20))
         XCTAssertEqual(monitor.currentSample?.managedBytes, 0)
         XCTAssertEqual(MemoryFormatting.managedUsage(monitor.currentSample!), "Partial reading")
 

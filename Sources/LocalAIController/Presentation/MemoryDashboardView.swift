@@ -234,7 +234,6 @@ struct MemoryDashboardView: View {
         case .llamaChat: .purple
         case .autocomplete: .orange
         case .embeddings: .green
-        case .ollama: .pink
         }
     }
 }

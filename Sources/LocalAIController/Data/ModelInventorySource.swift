@@ -2,20 +2,17 @@ import Foundation
 
 final class LiveModelInventorySource: ModelInventoryProviding, @unchecked Sendable {
     private let fileManager: FileManager
-    private let ollamaModelsURL: URL?
     private let huggingFaceHubURL: URL?
 
-    init(fileManager: FileManager, ollamaModelsURL: URL?, huggingFaceHubURL: URL?) {
+    init(fileManager: FileManager, huggingFaceHubURL: URL?) {
         self.fileManager = fileManager
-        self.ollamaModelsURL = ollamaModelsURL
         self.huggingFaceHubURL = huggingFaceHubURL
     }
 
     func discover() async -> [DiscoveredModel] {
-        await Task.detached(priority: .utility) { [fileManager, ollamaModelsURL, huggingFaceHubURL] in
+        await Task.detached(priority: .utility) { [fileManager, huggingFaceHubURL] in
             ModelInventoryScanner(
                 fileManager: fileManager,
-                ollamaModelsURL: ollamaModelsURL,
                 huggingFaceHubURL: huggingFaceHubURL
             ).scan()
         }.value

@@ -13,7 +13,7 @@ struct ModelLibraryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
-                Image(systemName: model.runtime == .ollama ? "shippingbox.fill" : "doc.zipper")
+                Image(systemName: "doc.zipper")
                     .font(.title2).foregroundStyle(AppTheme.accent).frame(width: 38, height: 38)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(metadata?.alias ?? model.name).font(.headline)
@@ -49,8 +49,7 @@ struct ModelLibraryRow: View {
         }
         .appCard(padding: 14)
         .sheet(item: $settingsService) { serviceID in
-            let role = serviceID == .ollama ? (metadata?.role ?? model.roleHint) : nil
-            ModelAssignmentSettingsSheet(serviceID: serviceID, role: role, manager: manager)
+            ModelAssignmentSettingsSheet(serviceID: serviceID, role: nil, manager: manager)
         }
     }
 
@@ -59,7 +58,7 @@ struct ModelLibraryRow: View {
     }
 
     private func compatible(_ service: ServiceSnapshot) -> Bool {
-        model.runtime == .ollama ? service.id == .ollama : service.id != .ollama
+        model.runtime == .llamaCpp
     }
 
 }
@@ -166,7 +165,7 @@ struct EditModelSheet: View {
 }
 
 extension ModelRuntime {
-    var title: String { self == .ollama ? "Ollama" : "llama.cpp" }
-    static var allCases: [ModelRuntime] { [.ollama, .llamaCpp] }
+    var title: String { "llama.cpp" }
+    static var allCases: [ModelRuntime] { [.llamaCpp] }
 }
 

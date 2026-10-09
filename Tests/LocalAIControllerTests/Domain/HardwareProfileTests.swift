@@ -94,11 +94,4 @@ final class HardwareProfileTests: XCTestCase {
         XCTAssertTrue(plan.notes.contains("Safe tuning uses 64 GB or more of physical memory and keeps selected models unchanged."))
     }
 
-    func testUnknownMemoryDoesNotChangeConfiguration() {
-        let config = ServiceLaunchConfiguration.defaultValue(for: .ollama)
-        let plan = HardwareTuningPolicy.plan(profile: .unavailable, configurations: [.ollama: config], installedModels: [], recommendations: [])
-
-        XCTAssertTrue(plan.configurations.isEmpty)
-        XCTAssertTrue(plan.notes.first?.contains("no settings were changed") == true)
-    }
 }
