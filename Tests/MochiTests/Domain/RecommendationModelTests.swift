@@ -133,7 +133,9 @@ final class RecommendationModelTests: XCTestCase {
   }
 
   func testCuratedLlamaCppRecommendationsAreLaunchableAndFitThisMac() async throws {
-    let recommendations = try await CuratedLlamaCppProvider().fetch()
+    let recommendations = try await CuratedLlamaCppProvider(
+      physicalMemory: 36 * 1_073_741_824
+    ).fetch()
 
     XCTAssertEqual(Set(recommendations.map(\.role)), Set(RecommendationRole.allCases))
     XCTAssertTrue(recommendations.allSatisfy { $0.runtime == "llama.cpp" })
