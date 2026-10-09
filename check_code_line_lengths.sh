@@ -10,7 +10,7 @@ violations=0
 # Find all authored code files and check line counts
 while IFS= read -r -d '' file; do
     lines=$(wc -l < "$file")
-    if [[ $lines -gt 300 ]]; then
+    if [[ $lines -gt 250 ]]; then
         echo "${file#$ROOT/}:${lines}"
         violations=1
     fi

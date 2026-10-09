@@ -36,7 +36,7 @@ SwiftUI view -> observable manager/store -> protocols for system/process/data ac
 - Add an abstraction after a real boundary or variation exists. Do not create
   protocols solely to mirror every concrete type.
 - Split a type when it combines observable state with multiple effectful
-  responsibilities, even when it is under 300 lines. Prefer a small facade
+  responsibilities, even when it is under 250 lines. Prefer a small facade
   over several focused collaborators with default live implementations.
 - Keep effectful collaborator methods async or actor-isolated when they can
   block. Synchronous methods are limited to deterministic policy and cheap

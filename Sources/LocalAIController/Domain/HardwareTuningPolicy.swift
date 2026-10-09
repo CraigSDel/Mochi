@@ -51,7 +51,7 @@ enum HardwareTuningPolicy {
         let gib = Double(bytes) / 1_073_741_824
         if gib <= 8 { return 8 }
         if gib <= 16 { return 16 }
-        if gib <= 32 { return 32 }
+        if gib < 64 { return 32 }
         return 64
     }
 

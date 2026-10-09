@@ -4,40 +4,44 @@ import ServiceManagement
 
 @main
 struct LocalAIControllerApp: App {
-    @StateObject private var manager = ServiceManager()
     @StateObject private var recommendations = RecommendationStore()
     @StateObject private var memoryMonitor = MemoryMonitor()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup("Local AI Controller", id: "main") {
-            MainView(manager: manager, recommendations: recommendations, memoryMonitor: memoryMonitor)
+            MainView(manager: appDelegate.manager, recommendations: recommendations, memoryMonitor: memoryMonitor)
                 .frame(minWidth: 900, minHeight: 640)
                 .tint(AppTheme.accent)
                 .onAppear {
-                    appDelegate.manager = manager
-                    Task { await memoryMonitor.start(serviceRoots: { [weak serviceManager = manager] in
+                    Task { await memoryMonitor.start(serviceRoots: { [weak serviceManager = appDelegate.manager] in
                         serviceManager?.managedProcessMemoryRoots ?? [:]
                     }) }
                 }
         }
         MenuBarExtra("Local AI", systemImage: menuIcon) {
-            MenuView(manager: manager)
+            MenuView(manager: appDelegate.manager)
         }
         Settings {
-            SettingsView(manager: manager)
+            SettingsView(manager: appDelegate.manager)
         }
     }
 
     private var menuIcon: String {
-        manager.services.contains(where: { $0.state == .running }) ? "cpu.fill" : "cpu"
+        appDelegate.manager.services.contains(where: { $0.state == .running }) ? "cpu.fill" : "cpu"
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    weak var manager: ServiceManager?
+    let manager: ServiceManager
+
+    override init() {
+        self.manager = ServiceManager()
+        super.init()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let manager else { return .terminateNow }
         Task { @MainActor in
             await manager.stopAll()
             sender.reply(toApplicationShouldTerminate: true)

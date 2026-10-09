@@ -25,7 +25,7 @@ When the project has layered directories, add XCTest checks that:
   `FileManager`, `Data(contentsOf:)`, `URLSession`, or `UserDefaults` for
   effectful work instead of an injected collaborator;
 - detect source files that combine multiple unrelated effect boundaries and
-  report them for responsibility-based review, even below 300 lines.
+  report them for responsibility-based review, even below 250 lines.
 
 Prefer SwiftSyntax for source inspection when it is available in the package.
 Keep architecture tests deterministic, explain the violated boundary in the

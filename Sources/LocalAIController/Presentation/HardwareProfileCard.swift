@@ -68,9 +68,11 @@ struct HardwareProfileCard: View {
             }
 
             HStack {
-                Button("Apply safe tuning") { manager.applyHardwareTuning() }
+                Button(plan?.hasConfigurationChanges == true ? "Apply safe tuning" : "Already within safe limits") {
+                    manager.applyHardwareTuning()
+                }
                     .buttonStyle(ApplePrimaryButtonStyle())
-                    .disabled(plan?.configurations.isEmpty != false)
+                    .disabled(plan?.hasConfigurationChanges != true)
                 if manager.canRestoreHardwareTuning {
                     Button("Restore previous settings") { manager.restoreHardwareTuning() }
                         .buttonStyle(AppleSecondaryButtonStyle())
@@ -80,6 +82,11 @@ struct HardwareProfileCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+            if let plan, !plan.hasConfigurationChanges {
+                Text("Current launch settings already match the conservative limits for this Mac.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .appCard()

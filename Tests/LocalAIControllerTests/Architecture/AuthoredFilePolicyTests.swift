@@ -1,7 +1,7 @@
 import XCTest
 
-final class RepositoryHygieneTests: XCTestCase {
-    func testNoAuthoredFileExceeds300Lines() throws {
+final class AuthoredFilePolicyTests: XCTestCase {
+    func testNoAuthoredFileExceeds250Lines() throws {
         let script = try locateLineLengthScript()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -13,7 +13,7 @@ final class RepositoryHygieneTests: XCTestCase {
         process.waitUntilExit()
 
         let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        XCTAssertEqual(process.terminationStatus, 0, "Files exceeding 300 lines:\n\(text)")
+        XCTAssertEqual(process.terminationStatus, 0, "Files exceeding 250 lines:\n\(text)")
     }
 
     func testLaunchersDoNotInstallOrElevateAndConsumeAutocompleteLimit() throws {
@@ -72,3 +72,4 @@ final class RepositoryHygieneTests: XCTestCase {
         throw CocoaError(.fileReadNoPermission)
     }
 }
+

@@ -224,7 +224,7 @@ docs/                          Architecture, style, and workflow guides
 start_llama_network.sh         llama.cpp launcher
 start_ollama_network.sh        Ollama launcher
 build_app.sh                   Release build and app-bundle packaging
-check_code_line_lengths.sh     300-line authored-file quality gate
+check_code_line_lengths.sh     250-line authored-file quality gate
 ```
 
 ## Development
@@ -234,7 +234,7 @@ The package is built and tested with Swift Package Manager:
 ```bash
 swift build                    # build the app
 swift test                     # run the test suite
-./check_code_line_lengths.sh   # 300-line authored-file quality gate
+./check_code_line_lengths.sh   # 250-line authored-file quality gate
 ./scripts/validate_repository.sh # full local validation and contract checks
 ```
 

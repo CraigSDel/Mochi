@@ -40,7 +40,7 @@ AppResources/                   Info.plist and application icon
 start_llama_network.sh          llama.cpp launcher
 start_ollama_network.sh         Ollama launcher
 build_app.sh                    release build and app-bundle packaging
-check_code_line_lengths.sh      300-line authored-file quality gate
+check_code_line_lengths.sh      250-line authored-file quality gate
 ```
 
 Add a focused source file when a type has a distinct responsibility. Do not
@@ -63,7 +63,7 @@ turn this small package into a speculative multi-module architecture.
 - For every new collaborator, add isolated tests for success, failure,
   cancellation where relevant, persistence compatibility, and missing runtime
   dependencies. Keep integration tests for shell/runtime contracts.
-- Files at or below 300 lines are still candidates for splitting when their
+- Files at or below 250 lines are still candidates for splitting when their
   responsibilities are unrelated. Never compress code or hide dependencies to
   satisfy the line-count gate.
 
@@ -82,7 +82,7 @@ turn this small package into a speculative multi-module architecture.
   tools must produce actionable guidance.
 - Use semantic, appearance-aware colors. Every view must remain readable in
   both light and dark mode; see [`instructions.md`](instructions.md).
-- Keep authored code files at or below 300 lines. Split by responsibility
+- Keep authored code files at or below 250 lines. Split by responsibility
   instead of compressing code to evade the check.
 - Preserve backward compatibility for persisted `Codable` records and
   `UserDefaults` keys unless a migration is part of the change.

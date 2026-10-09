@@ -7,13 +7,19 @@ enum HardwareProfileParser {
         let profiler = jsonObject(systemProfilerData)
         let hardware = firstDictionary(in: profiler["SPHardwareDataType"])
         let displays = firstDictionary(in: profiler["SPDisplaysDataType"])
-        let chipName = stringValue(hardware["chip"]) ?? stringValue(hardware["cpu_type"])
+        let chipName = stringValue(hardware["chip"])
+            ?? stringValue(hardware["chip_type"])
+            ?? stringValue(hardware["cpu_type"])
         let modelIdentifier = sysctl["hw.model"] ?? stringValue(hardware["machine_model"])
         let memory = UInt64(sysctl["hw.memsize"] ?? "") ?? parseBytes(stringValue(hardware["physical_memory"])) ?? 0
         let cpu = Int(sysctl["hw.ncpu"] ?? "") ?? parseInteger(stringValue(hardware["number_processors"]))
         let performance = Int(sysctl["hw.perflevel0.physicalcpu"] ?? "")
         let efficiency = Int(sysctl["hw.perflevel1.physicalcpu"] ?? "")
-        let gpu = parseInteger(stringValue(displays["spdisplays_total_cores"]) ?? stringValue(displays["gpu_cores"]))
+        let gpu = parseInteger(
+            stringValue(displays["spdisplays_total_cores"])
+                ?? stringValue(displays["sppci_cores"])
+                ?? stringValue(displays["gpu_cores"])
+        )
         let family = chipFamily(chipName)
         var missing = [String]()
         if architecture == .unknown { missing.append("architecture") }
@@ -42,7 +48,8 @@ enum HardwareProfileParser {
 
     private static func parseInteger(_ value: String?) -> Int? {
         guard let value else { return nil }
-        return Int(value.filter { $0.isNumber })
+        guard let range = value.range(of: #"\d+"#, options: .regularExpression) else { return nil }
+        return Int(value[range])
     }
 
     private static func parseBytes(_ value: String?) -> UInt64? {

@@ -6,7 +6,7 @@ enum ServiceID: String, Codable, CaseIterable, Identifiable, Hashable, Sendable 
 }
 
 enum SidebarDestination: Hashable {
-    case overview, models, service(ServiceID), recommendations
+    case overview, models, recommendations, settings, service(ServiceID)
     static let initial: SidebarDestination = .overview
 }
 

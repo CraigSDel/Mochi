@@ -3,7 +3,7 @@
 - Follow the Swift API Design Guidelines and the conventions already present
   in adjacent files. Prefer clarity at the call site over terse names.
 - Use four-space indentation, UTF-8, and no wildcard-style re-exports.
-- Keep authored Swift, shell, and configuration files at or below 300 lines.
+- Keep authored Swift, shell, and configuration files at or below 250 lines.
   A new cohesive type or extension belongs in a focused file when a file grows.
 - Prefer value types for models and configuration. Use a class when identity,
   observable state, delegation, or reference semantics are required.
