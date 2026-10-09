@@ -33,3 +33,23 @@ or process-ownership safeguard.
 
 The handoff should lead with the outcome, list validation actually performed,
 and call out any unverified visual behavior, residual risk, or follow-up work.
+
+## CI failure diagnosis
+
+When CI reports a nonzero test count, do not infer the failing behavior from
+the final summary or from passing suites near the end of the log. Find the
+individual failing assertions and verify that the run used the current commit;
+copied logs may belong to an earlier workflow run.
+
+Use a focused command while diagnosing, then run the complete suite:
+
+```bash
+swift test --filter HuggingFaceProviderTests
+swift test
+```
+
+If a test depends on host state, make that state an injected collaborator or
+value and give the test a fixed fixture. CI runner memory is not a stable test
+input. URL/network tests must normalize percent-encoded paths in their fakes so
+query encoding does not accidentally turn a successful detail response into a
+fallback path.

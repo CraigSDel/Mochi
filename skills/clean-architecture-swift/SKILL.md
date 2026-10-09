@@ -34,6 +34,10 @@ layers or modules without a distinct responsibility.
   not expose generic transport or persistence errors as the UI contract.
 - Define protocols and fakes/mocks for use cases, repositories, and clients so
   ViewModels and business rules can be tested in isolation.
+- Inject environment-dependent policy inputs at composition boundaries. Keep
+  production defaults such as `ProcessInfo.processInfo.physicalMemory`, the
+  current date, and live URLs out of deterministic tests; pass explicit test
+  values instead.
 - Keep blocking filesystem/process work behind async or actor-backed protocols;
   do not call synchronous scans or waits from `@MainActor` state paths.
 

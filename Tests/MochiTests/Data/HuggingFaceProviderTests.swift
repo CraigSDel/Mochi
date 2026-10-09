@@ -3,6 +3,8 @@ import XCTest
 @testable import Mochi
 
 final class HuggingFaceProviderTests: XCTestCase {
+  private let testPhysicalMemory = 36 * UInt64(1_073_741_824)
+
   private func summary(
     id: String, pipelineTag: String = "text-generation", tags: [String] = ["gguf"],
     siblings: [HFModel.Sibling] = []
@@ -33,7 +35,7 @@ final class HuggingFaceProviderTests: XCTestCase {
         data: Data(sizedDetail(for: "qwen3-model-\(index)").utf8))
     }
 
-    let recommendations = try await HuggingFaceProvider(fetcher: fetcher).fetch()
+    let recommendations = try await provider(fetcher: fetcher).fetch()
 
     // The old implementation capped detail requests at the first 20 rows, so
     // anything below the cut-off could never be verified.
@@ -61,7 +63,7 @@ final class HuggingFaceProviderTests: XCTestCase {
       pathSuffix: "/api/models/owner/exotic-arch",
       data: Data(sizedDetail(for: "owner/exotic-arch").utf8))
 
-    let recommendations = try await HuggingFaceProvider(fetcher: fetcher).fetch()
+    let recommendations = try await provider(fetcher: fetcher).fetch()
 
     XCTAssertEqual(fetcher.requestCount(matching: "/api/models/qwen2-vl-vision"), 0)
     XCTAssertEqual(fetcher.requestCount(matching: "/api/models/moondream-vision"), 0)
@@ -89,7 +91,7 @@ final class HuggingFaceProviderTests: XCTestCase {
       data: Data(sizedDetail(for: "owner/llama-text").utf8))
     fetcher.stubFailure(pathSuffix: "/api/models/owner/mistral-flaky")
 
-    let recommendations = try await HuggingFaceProvider(fetcher: fetcher).fetch()
+    let recommendations = try await provider(fetcher: fetcher).fetch()
 
     XCTAssertEqual(recommendations.map(\.name), ["owner/llama-text", "owner/mistral-flaky"])
     XCTAssertEqual(recommendations[0].compatibility, .compatible)
@@ -106,7 +108,7 @@ final class HuggingFaceProviderTests: XCTestCase {
       pathSuffix: "/api/models/owner/llama-text",
       data: Data(sizedDetail(for: "owner/llama-text").utf8), statusCode: 503)
 
-    let recommendations = try await HuggingFaceProvider(fetcher: fetcher).fetch()
+    let recommendations = try await provider(fetcher: fetcher).fetch()
 
     XCTAssertEqual(recommendations.map(\.compatibility), [.unverified])
   }
@@ -116,7 +118,7 @@ final class HuggingFaceProviderTests: XCTestCase {
     fetcher.stub(pathSuffix: "/api/models", data: Data("[]".utf8), statusCode: 500)
 
     do {
-      _ = try await HuggingFaceProvider(fetcher: fetcher).fetch()
+      _ = try await provider(fetcher: fetcher).fetch()
       XCTFail("Expected a non-success response to fail the fetch.")
     } catch {
       XCTAssertTrue(error is URLError)
@@ -130,7 +132,7 @@ final class HuggingFaceProviderTests: XCTestCase {
       pathSuffix: "/api/models/owner/llama-text",
       data: Data(sizedDetail(for: "owner/llama-text").utf8))
 
-    _ = try await HuggingFaceProvider(fetcher: fetcher).fetch()
+    _ = try await provider(fetcher: fetcher).fetch()
 
     XCTAssertEqual(Set(fetcher.timeouts), [HuggingFaceProvider.requestTimeout])
   }
@@ -143,7 +145,7 @@ final class HuggingFaceProviderTests: XCTestCase {
       pathSuffix: "/api/models/owner/qwen3-model",
       data: Data(sizedDetail(for: "owner/qwen3-model").utf8))
 
-    let results = try await HuggingFaceProvider(fetcher: fetcher).search(query: "qwen 3")
+    let results = try await provider(fetcher: fetcher).search(query: "qwen 3")
 
     let components = try XCTUnwrap(
       fetcher.requestedURLs.first.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }
@@ -171,5 +173,9 @@ final class HuggingFaceProviderTests: XCTestCase {
 
   private static func json(_ values: [String]) -> String {
     "[" + values.map { "\"\($0)\"" }.joined(separator: ",") + "]"
+  }
+
+  private func provider(fetcher: StubFetcher) -> HuggingFaceProvider {
+    HuggingFaceProvider(fetcher: fetcher, physicalMemory: testPhysicalMemory)
   }
 }

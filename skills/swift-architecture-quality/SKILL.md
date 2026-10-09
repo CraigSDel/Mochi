@@ -42,6 +42,11 @@ the limitation or use a small, clearly bounded fallback only when appropriate.
   behavior.
 - Keep mocks reusable and protocol-shaped; do not test through real network,
   database, process, or UI dependencies in unit tests.
+- Make fakes deterministic across developer machines and CI runners. Inject
+  physical memory, clocks, filesystem locations, and network clients instead
+  of reading host state from the code under test. For URL fakes, normalize
+  percent-encoded paths before matching and assert both request counts and
+  resulting domain state.
 - For persistence, process, and runtime collaborators, include failure,
   cancellation, missing dependency, and compatibility cases in addition to
   happy-path tests.

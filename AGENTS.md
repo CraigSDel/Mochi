@@ -89,6 +89,21 @@ turn this small package into a speculative multi-module architecture.
 
 ## Definition of done
 
+### CI and test-environment determinism
+
+- Treat a CI summary that only reports the failure count as incomplete. Locate
+  the individual `XCTAssert`, `error:`, and failing test-case lines before
+  diagnosing the cause; confirm the log belongs to the commit under review.
+- Isolate the failing suite with `swift test --filter` before rerunning the
+  complete package test target. Include both focused and full-suite results in
+  the handoff.
+- Inject machine-dependent inputs such as physical memory, clocks, paths, and
+  network clients at the boundary. Production composition may default to the
+  host environment, but tests must use explicit stable fixtures.
+- For URL-backed providers, match stub requests using normalized URL paths,
+  including percent-decoding, and prefer the most specific path match. Assert
+  both request behavior and decoded domain results.
+
 Review every user-visible or persisted configuration field through the complete path: UI → model → environment/arguments → launcher → runtime. Flag fields that are stored or displayed but not consumed.
 
 Treat process ownership as an exact identity check. Never consider a process owned solely because its command contains `bash`, a runtime name, or a partial executable name. Verify executable identity, launcher path, arguments, and PID reuse.

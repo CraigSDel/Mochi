@@ -56,8 +56,15 @@ struct HuggingFaceProvider: RecommendationProvider, ModelSearchProvider {
   static let detailConcurrencyLimit = 4
   static let requestTimeout: TimeInterval = 20
   private let fetcher: any HTTPFetching
+  private let physicalMemory: UInt64
 
-  init(fetcher: any HTTPFetching = URLSessionFetching()) { self.fetcher = fetcher }
+  init(
+    fetcher: any HTTPFetching = URLSessionFetching(),
+    physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
+  ) {
+    self.fetcher = fetcher
+    self.physicalMemory = physicalMemory
+  }
 
   func fetch() async throws -> [ModelRecommendation] {
     try await fetch(query: nil)
@@ -132,7 +139,8 @@ struct HuggingFaceProvider: RecommendationProvider, ModelSearchProvider {
       architectureKnown: architectureKnown,
       gated: model.isGated,
       multimodal: model.isMultimodal,
-      cloudOnly: false
+      cloudOnly: false,
+      physicalMemory: physicalMemory
     )
     return ModelRecommendation(
       id: "hf:\(model.id)", name: model.id, source: sourceName, runtime: "llama.cpp",
@@ -144,7 +152,8 @@ struct HuggingFaceProvider: RecommendationProvider, ModelSearchProvider {
       compatibility: state,
       rationale: Self.rationale(
         isGated: model.isGated, multimodal: model.isMultimodal,
-        architectureKnown: architectureKnown, candidate: candidate),
+        architectureKnown: architectureKnown, candidate: candidate,
+        physicalMemory: physicalMemory),
       updatedAt: model.lastModified,
       repository: candidate == nil ? nil : model.id, filename: candidate?.rfilename
     )
@@ -162,13 +171,14 @@ struct HuggingFaceProvider: RecommendationProvider, ModelSearchProvider {
   }
 
   private static func rationale(
-    isGated: Bool, multimodal: Bool, architectureKnown: Bool, candidate: HFModel.Sibling?
+    isGated: Bool, multimodal: Bool, architectureKnown: Bool, candidate: HFModel.Sibling?,
+    physicalMemory: UInt64
   ) -> String {
     if isGated { return "Gated or private models are excluded." }
     if multimodal { return "Multimodal models are excluded from this text-only controller." }
     if !architectureKnown { return "Architecture is not on the maintained llama.cpp allowlist." }
     if candidate == nil { return "No supported, sized Q4/Q5 GGUF variant was reported." }
-    if !ControllerPolicy.fits(sizeBytes: candidate?.size) {
+    if !ControllerPolicy.fits(sizeBytes: candidate?.size, physicalMemory: physicalMemory) {
       return "The model exceeds the conservative memory budget."
     }
     return "Known llama.cpp architecture and a local-sized GGUF with system memory reserved."
