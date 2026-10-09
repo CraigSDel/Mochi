@@ -10,7 +10,8 @@ struct MochiApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
   init() {
-    let rawValue = UserDefaults.standard.string(forKey: "appearance.theme")
+    let rawValue =
+      UserDefaults.standard.string(forKey: "appearance.theme")
       ?? MochiTheme.pink.rawValue
     AppTheme.apply(MochiTheme(rawValue: rawValue) ?? .pink)
   }
