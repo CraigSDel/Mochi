@@ -38,16 +38,10 @@ The app manages:
 ## Screenshots
 
 The controller exposes llama.cpp endpoints over your chosen network binding.
-The screenshots below show supported clients pointed at those endpoints while
-the services are running.
+This overview is a real capture of the app with all three services stopped;
+it shows the control center, memory dashboard, service cards, and navigation.
 
-| Cline (chat) | Twinny (chat) |
-| --- | --- |
-| ![Cline API configuration pointed at the llama.cpp chat endpoint.](cline_chat.png) | ![Twinny chat provider pointed at the llama.cpp endpoint.](twinny_chat.png) |
-
-| Twinny (autocomplete) | Twinny (embeddings) |
-| --- | --- |
-| ![Twinny autocomplete (FIM) provider for the code-completion service.](twinny_autocomplete.png) | ![Twinny embeddings provider for the Nomic workspace-embedding service.](twinny_embedding.png) |
+![Local AI Controller overview showing the control center, memory dashboard, and three llama.cpp service cards.](docs/images/controller-overview.png)
 
 ## Requirements
 

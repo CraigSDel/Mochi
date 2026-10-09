@@ -437,7 +437,7 @@ The screenshots and terminal output show the following addresses for the current
 | Network | Host |
 | --- | --- |
 | Tailscale | `TAILSCALE_IP` |
-| Local Wi-Fi | `LAN_IP` |
+| Local Wi-Fi | `WIFI_IP` |
 | Same machine | `localhost` |
 
 Use the Tailscale address only from devices authenticated to the same tailnet. These addresses can change; use the URLs printed by `start_llama_network.sh` if they differ from the values above.
