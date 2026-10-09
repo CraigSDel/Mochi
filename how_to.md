@@ -8,7 +8,7 @@ Here is the updated **Complete Setup Guide**, fully integrated with our tool cap
 
 **Core Components:** `llama-server` (`llama.cpp`), Homebrew, Tailscale, VS Code, **Cline**, and **Twinny**.
 
-## Local AI Controller desktop app
+## Mochi desktop app
 
 The native macOS controller provides both a menu-bar status item and a full
 window for starting and stopping the configured services, inspecting logs, and
@@ -23,9 +23,9 @@ Build the locally signed application:
 ./build_app.sh
 ```
 
-The result is `dist/Local AI Controller.app`. The application uses the bundled
+The result is `dist/Mochi.app`. The application uses the bundled
 launcher scripts, stores logs and process records under
-`~/Library/Application Support/Local AI Controller/`, and preserves services
+`~/Library/Application Support/Mochi/`, and preserves services
 when requested at quit. Configure each service's port, bind mode, download
 policy, model identifiers, and advanced runtime settings directly on its
 service screen.

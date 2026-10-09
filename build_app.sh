@@ -5,7 +5,7 @@ IFS=$'\n\t'
 
 ROOT=$(cd "$(dirname "$0")" && pwd)
 BUILD_DIR="$ROOT/.build"
-APP_DIR="$ROOT/dist/Local AI Controller.app"
+APP_DIR="$ROOT/dist/Mochi.app"
 CONTENTS="$APP_DIR/Contents"
 
 "$ROOT/check_code_line_lengths.sh" || exit 1
@@ -17,10 +17,10 @@ swift build --disable-sandbox -c release -debug-info-format none --package-path 
 
 rm -rf "$APP_DIR"
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources"
-cp "$BUILD_DIR/release/LocalAIController" "$CONTENTS/MacOS/LocalAIController"
+cp "$BUILD_DIR/release/Mochi" "$CONTENTS/MacOS/Mochi"
 cp "$ROOT/start_llama_network.sh" "$CONTENTS/Resources/"
 cp "$ROOT/AppResources/AppIcon.icns" "$CONTENTS/Resources/AppIcon.icns"
 cp "$ROOT/AppResources/Info.plist" "$CONTENTS/Info.plist"
-chmod +x "$CONTENTS/MacOS/LocalAIController" "$CONTENTS/Resources/"*.sh
+chmod +x "$CONTENTS/MacOS/Mochi" "$CONTENTS/Resources/"*.sh
 codesign --force --deep --sign - "$APP_DIR"
 echo "$APP_DIR"

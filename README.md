@@ -1,13 +1,13 @@
-# Local AI Controller
+# Mochi
 
 <p align="center">
-  <img src="AppResources/AppIcon.png" alt="Local AI Controller icon" width="128">
+  <img src="AppResources/AppIcon.png" alt="Mochi icon" width="128">
 </p>
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-0B83FF?style=flat-square&logo=apple&labelColor=141414)
 ![Swift 6](https://img.shields.io/badge/Swift-6.0-FA7343?style=flat-square&logo=swift&labelColor=141414)
 
-Local AI Controller is a native macOS menu-bar and desktop application for
+Mochi is a native macOS menu-bar and desktop application for
 starting, stopping, configuring, and monitoring three local `llama.cpp` model
 services.
 
@@ -41,7 +41,7 @@ The controller exposes llama.cpp endpoints over your chosen network binding.
 This overview is a real capture of the app with all three services stopped;
 it shows the control center, memory dashboard, service cards, and navigation.
 
-![Local AI Controller overview showing the control center, memory dashboard, and three llama.cpp service cards.](docs/images/controller-overview.png)
+![Mochi overview showing the control center, memory dashboard, and three llama.cpp service cards.](docs/images/controller-overview.png)
 
 ## Requirements
 
@@ -80,15 +80,15 @@ From this repository, run:
 The locally signed application will be created at:
 
 ```text
-dist/Local AI Controller.app
+dist/Mochi.app
 ```
 
 ## Open the app
 
-Open it from Finder by double-clicking `dist/Local AI Controller.app`, or run:
+Open it from Finder by double-clicking `dist/Mochi.app`, or run:
 
 ```bash
-open "dist/Local AI Controller.app"
+open "dist/Mochi.app"
 ```
 
 If macOS blocks the first launch, Control-click the app in Finder, choose
@@ -195,7 +195,7 @@ or launch actions.
 Service logs, process records, and the recommendation cache are stored under:
 
 ```text
-~/Library/Application Support/Local AI Controller/
+~/Library/Application Support/Mochi/
 ```
 
 Per-service launch profiles and app preferences are stored through macOS user
@@ -204,8 +204,8 @@ defaults.
 ## Repository structure
 
 ```text
-Sources/LocalAIController/     SwiftUI + AppKit application code
-Tests/LocalAIControllerTests/  Unit and integration-style tests with fakes
+Sources/Mochi/     SwiftUI + AppKit application code
+Tests/MochiTests/  Unit and integration-style tests with fakes
 AppResources/                  Info.plist and application icon
 docs/                          Architecture, style, and workflow guides
 start_llama_network.sh         llama.cpp launcher
@@ -224,7 +224,7 @@ swift test                     # run the test suite
 ./scripts/validate_repository.sh # full local validation and contract checks
 ```
 
-Run `swift test --filter <TestClassName>` to iterate on a focused test. `./build_app.sh` (see [Build the app](#build-the-app)) produces the signed `dist/Local AI Controller.app` bundle.
+Run `swift test --filter <TestClassName>` to iterate on a focused test. `./build_app.sh` (see [Build the app](#build-the-app)) produces the signed `dist/Mochi.app` bundle.
 
 ## Documentation
 
@@ -271,7 +271,7 @@ Verification run on 2026-10-09:
 | --- | --- | --- |
 | Authored-file line-length gate | Passing | `./check_code_line_lengths.sh` |
 | Repository validation | Needs attention | Existing trailing whitespace in `ServiceManagerPolicy.swift:27` |
-| Release app packaging | Passing | `./build_app.sh` produced and signed `dist/Local AI Controller.app` |
+| Release app packaging | Passing | `./build_app.sh` produced and signed `dist/Mochi.app` |
 | Swift build and tests | 2 failures | 154 tests executed; failures are in `MemoryMonitoringTests` and `StartupValidationTests` due to expectations that no longer match the current code. |
 
 Run the full local checks with:

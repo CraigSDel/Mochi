@@ -4,7 +4,7 @@ Tests use XCTest and mirror externally observable behavior. Keep tests
 deterministic and independent of installed models, live Tailscale peers, active
 ports, the user's defaults domain, and public registries.
 
-- Put tests in `Tests/LocalAIControllerTests/` and name classes after the
+- Put tests in `Tests/MochiTests/` and name classes after the
   behavior or production type under test.
 - Use descriptive `test...` method names that state the condition and expected
   outcome.

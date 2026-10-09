@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "LocalAIController",
+    name: "Mochi",
     platforms: [.macOS(.v14)],
-    products: [.executable(name: "LocalAIController", targets: ["LocalAIController"])],
+    products: [.executable(name: "Mochi", targets: ["Mochi"])],
     targets: [
-        .executableTarget(name: "LocalAIController"),
-        .testTarget(name: "LocalAIControllerTests", dependencies: ["LocalAIController"])
+        .executableTarget(name: "Mochi"),
+        .testTarget(name: "MochiTests", dependencies: ["Mochi"])
     ]
 )

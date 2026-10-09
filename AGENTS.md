@@ -1,4 +1,4 @@
-# Local AI Controller — Swift/macOS
+# Mochi — Swift/macOS
 
 ## Reusable Swift architecture guidance
 
@@ -6,7 +6,7 @@ For Swift feature creation or refactoring, apply the project-local
 `skills/clean-architecture-swift/SKILL.md` guidance: Clean Architecture and
 MVVM, protocol-based dependency inversion, modern concurrency, explicit domain
 errors, and isolated tests. Treat it as a design guide within this repository's
-established `Sources/LocalAIController` layout; the rules below for macOS
+established `Sources/Mochi` layout; the rules below for macOS
 lifecycle, security, persistence compatibility, and file size take precedence
 where they are more specific.
 
@@ -27,15 +27,15 @@ Standards: [`docs/swift-style.md`](docs/swift-style.md) ·
 
 Swift 6 · Swift Package Manager · SwiftUI + AppKit · macOS 14+ · XCTest.
 
-The repository builds one executable target, `LocalAIController`, and one test
-target, `LocalAIControllerTests`. It packages a locally signed macOS app with
+The repository builds one executable target, `Mochi`, and one test
+target, `MochiTests`. It packages a locally signed macOS app with
 `build_app.sh` and manages local `llama.cpp`, Ollama, and Tailscale processes.
 
 ## Repository map
 
 ```text
-Sources/LocalAIController/       application code
-Tests/LocalAIControllerTests/   unit and integration-style tests with fakes
+Sources/Mochi/       application code
+Tests/MochiTests/   unit and integration-style tests with fakes
 AppResources/                   Info.plist and application icon
 start_llama_network.sh          llama.cpp launcher
 start_ollama_network.sh         Ollama launcher

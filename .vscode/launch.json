@@ -5,20 +5,20 @@
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:ollama}",
-            "name": "Debug LocalAIController",
-            "target": "LocalAIController",
+            "name": "Debug Mochi",
+            "target": "Mochi",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug LocalAIController"
+            "preLaunchTask": "swift: Build Debug Mochi"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
             "cwd": "${workspaceFolder:ollama}",
-            "name": "Release LocalAIController",
-            "target": "LocalAIController",
+            "name": "Release Mochi",
+            "target": "Mochi",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release LocalAIController"
+            "preLaunchTask": "swift: Build Release Mochi"
         }
     ]
 }
