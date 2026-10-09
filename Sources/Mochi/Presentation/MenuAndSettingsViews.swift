@@ -51,6 +51,7 @@ struct SettingsView: View {
       PageHeader(
         eyebrow: "Preferences", title: "Settings",
         subtitle: "Make Mochi available when you need it.", symbol: "gearshape.fill")
+      ThemeSettingsSection()
       LaunchAtLoginSection(manager: manager)
       Label(
         "Ports, models, and network access are configured on each service screen.",
@@ -59,6 +60,6 @@ struct SettingsView: View {
       .font(.caption).foregroundStyle(.secondary)
       Spacer()
     }
-    .padding(24).frame(width: 520, height: 330).tint(AppTheme.accent)
+    .padding(24).frame(width: 520, height: 420).tint(AppTheme.accent)
   }
 }

@@ -24,7 +24,7 @@ extension ServiceManager {
       recommendations: recommendationMetadata,
       physicalMemory: probe.physicalMemory,
       defaultLlamaConfiguration: ServiceLaunchConfiguration.defaultValue(for: .llamaChat).llama,
-      defaultLlamaSize: definition(for: .llamaChat)?.estimatedBytes,
+      defaultLlamaSize: definition(for: .llamaChat)?.estimatedBytes
     )
   }
 

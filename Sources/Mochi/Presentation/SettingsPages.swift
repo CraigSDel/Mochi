@@ -8,13 +8,15 @@ struct MainWindowSettingsView: View {
       VStack(alignment: .leading, spacing: 22) {
         PageHeader(
           eyebrow: "Mochi", title: "Settings",
-          subtitle: "Tune your cozy local stack and check how it is reachable.", symbol: "gearshape.fill")
+          subtitle: "Tune your cozy local stack and check how it is reachable.",
+          symbol: "gearshape.fill")
         HardwareProfileCard(manager: manager)
         NetworkDiagnosticsView(manager: manager)
         VStack(alignment: .leading, spacing: 12) {
           SectionHeading(
             "General preferences", subtitle: "App behavior shared with macOS Settings.",
             symbol: "slider.horizontal.3")
+          ThemeSettingsSection()
           LaunchAtLoginSection(manager: manager)
         }
       }

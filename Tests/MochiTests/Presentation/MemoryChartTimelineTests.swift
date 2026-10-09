@@ -56,6 +56,45 @@ final class MemoryChartTimelineTests: XCTestCase {
     XCTAssertEqual(timeline.map(\.continuitySegment), [0, 0, 0])
   }
 
+  func testTimelineStartsNewSeriesAfterUnavailableReading() {
+    let samples = [
+      MemorySample(
+        timestamp: Date(timeIntervalSince1970: 1),
+        systemUsedBytes: 10,
+        systemTotalBytes: 32,
+        serviceReadings: [.llamaChat: .measured(bytes: 4)]
+      ),
+      MemorySample(
+        timestamp: Date(timeIntervalSince1970: 2),
+        systemUsedBytes: 11,
+        systemTotalBytes: 32,
+        serviceReadings: [.llamaChat: .noOwnedPID(reason: "Stopped")]
+      ),
+      MemorySample(
+        timestamp: Date(timeIntervalSince1970: 3),
+        systemUsedBytes: 12,
+        systemTotalBytes: 32,
+        serviceReadings: [.llamaChat: .measured(bytes: 5)]
+      ),
+    ]
+
+    let timeline = MemoryChartTimeline.samples(from: samples)
+    let series = timeline.map { sample in
+      sample.segments.first(where: { $0.id == ServiceID.llamaChat.rawValue })?.seriesID
+    }
+
+    XCTAssertNotEqual(series[0], series[2])
+  }
+
+  func testTimelineStartsNewSeriesAfterSamplingGap() {
+    let timeline = MemoryChartTimeline.samples(from: [sample(at: 1), sample(at: 4)])
+
+    XCTAssertNotEqual(
+      timeline[0].segments.first(where: { $0.id == "other" })?.seriesID,
+      timeline[1].segments.first(where: { $0.id == "other" })?.seriesID
+    )
+  }
+
   private func sample(at timestamp: TimeInterval) -> MemorySample {
     MemorySample(
       timestamp: Date(timeIntervalSince1970: timestamp),

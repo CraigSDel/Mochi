@@ -97,7 +97,7 @@ struct MemoryDashboardView: View {
 
   private var memoryChart: some View {
     let samples = monitor.samples
-    let timeline = MemoryChartTimeline.samples(from: samples, maximumGap: .infinity)
+    let timeline = MemoryChartTimeline.samples(from: samples)
     let scale = MemoryChartScale(samples: samples)
     return Chart {
       ForEach(timeline) { chartSample in
@@ -105,7 +105,7 @@ struct MemoryDashboardView: View {
           LineMark(
             x: .value("Time", chartSample.timestamp),
             y: .value("Memory", scale.value(for: segment.bytes)),
-            series: .value("Memory source", segment.id)
+            series: .value("Memory source", segment.seriesID)
           )
           .foregroundStyle(segment.serviceID.map(color(for:)) ?? .gray)
           .lineStyle(.init(lineWidth: 1.5))
@@ -115,7 +115,7 @@ struct MemoryDashboardView: View {
         LineMark(
           x: .value("Time", chartSample.timestamp),
           y: .value("Total system used", scale.value(for: chartSample.totalSystemUsedBytes)),
-          series: .value("Memory source", "total")
+          series: .value("Memory source", "total-\(chartSample.continuitySegment)")
         )
         .foregroundStyle(AppTheme.accent)
         .lineStyle(.init(lineWidth: 2))

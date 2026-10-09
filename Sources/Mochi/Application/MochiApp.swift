@@ -4,15 +4,23 @@ import SwiftUI
 
 @main
 struct MochiApp: App {
+  @AppStorage("appearance.theme") private var themeRawValue = MochiTheme.pink.rawValue
   @StateObject private var recommendations = RecommendationStore()
   @StateObject private var memoryMonitor = MemoryMonitor()
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+  init() {
+    let rawValue = UserDefaults.standard.string(forKey: "appearance.theme")
+      ?? MochiTheme.pink.rawValue
+    AppTheme.apply(MochiTheme(rawValue: rawValue) ?? .pink)
+  }
 
   var body: some Scene {
     WindowGroup("Mochi", id: "main") {
       MainView(
         manager: appDelegate.manager, recommendations: recommendations, memoryMonitor: memoryMonitor
       )
+      .id(themeRawValue)
       .frame(minWidth: 900, minHeight: 640)
       .tint(AppTheme.accent)
       .onAppear {
@@ -28,6 +36,7 @@ struct MochiApp: App {
     }
     Settings {
       SettingsView(manager: appDelegate.manager)
+        .id(themeRawValue)
     }
   }
 
