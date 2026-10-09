@@ -7,7 +7,7 @@ struct LaunchAtLoginSection: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Toggle(isOn: Binding(get: { manager.launchAtLogin }, set: updateLogin)) {
+      Toggle(isOn: launchAtLoginBinding) {
         VStack(alignment: .leading, spacing: 3) {
           Text("Launch at Login").font(.headline)
           Text("Open the controller automatically when you sign in to this Mac.").font(.caption)
@@ -21,6 +21,13 @@ struct LaunchAtLoginSection: View {
     }
     .appCard()
     .onAppear { manager.launchAtLogin = SMAppService.mainApp.status == .enabled }
+  }
+
+  private var launchAtLoginBinding: Binding<Bool> {
+    Binding(
+      get: { manager.launchAtLogin },
+      set: { enabled in updateLogin(enabled) }
+    )
   }
 
   private func updateLogin(_ enabled: Bool) {
