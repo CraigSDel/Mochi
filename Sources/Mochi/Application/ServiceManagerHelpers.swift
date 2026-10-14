@@ -144,6 +144,17 @@ extension ServiceManager {
     definitions.first(where: { $0.id == id })?.name ?? id.rawValue
   }
 
+  func chatServiceOptions() -> [ChatServiceOption] {
+    services.filter { $0.id == .llamaChat }.map { service in
+      let bindMode = configuration(for: service.id).bindMode
+      return ChatServiceOption(
+        serviceID: service.id, name: service.definition.name,
+        modelName: configuration(for: service.id).llama?.alias ?? service.definition.name,
+        endpoint: service.endpoint.flatMap(URL.init(string:)), state: service.state,
+        securitySummary: bindMode == .localhost ? "available only on this Mac" : bindMode.title)
+    }
+  }
+
   func definition(for id: ServiceID) -> ServiceDefinition? {
     definitions.first { $0.id == id }
   }

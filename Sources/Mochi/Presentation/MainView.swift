@@ -7,6 +7,7 @@ struct MainView: View {
   @ObservedObject var memoryMonitor: MemoryMonitor
   @State private var selection: SidebarDestination = .initial
   @StateObject private var downloads: ModelDownloadCoordinator
+  @StateObject private var studio: StudioChatViewModel
   private let fileReveal: any FileRevealClient
 
   init(
@@ -20,6 +21,7 @@ struct MainView: View {
     _downloads = StateObject(
       wrappedValue: ModelDownloadCoordinator(
         manager: manager, queueStore: DownloadComposition.queueStore()))
+    _studio = StateObject(wrappedValue: StudioComposition.viewModel())
   }
 
   var body: some View {
@@ -66,6 +68,8 @@ struct MainView: View {
       }
       Section("Workspace") {
         Label("Overview", systemImage: "square.grid.2x2.fill").tag(SidebarDestination.overview)
+        Label("Studio", systemImage: "bubble.left.and.bubble.right.fill")
+          .tag(SidebarDestination.studio)
         Label("Setup guide", systemImage: "wand.and.stars").tag(SidebarDestination.setup)
         Label("Models", systemImage: "shippingbox.fill").tag(SidebarDestination.models)
         Label("Recommendations", systemImage: "sparkles").tag(SidebarDestination.recommendations)
@@ -94,6 +98,8 @@ struct MainView: View {
     switch selection {
     case .overview:
       OverviewView(manager: manager, memoryMonitor: memoryMonitor, selection: $selection)
+    case .studio:
+      StudioChatView(manager: manager, viewModel: studio, memoryMonitor: memoryMonitor)
     case .setup:
       SetupGuideView(manager: manager)
     case .models:
